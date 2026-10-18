@@ -1,0 +1,43 @@
+# KinoPub GUI — Synology NAS
+# HTTP access is intended only for the trusted LAN / VPN.
+services:
+  kinopub:
+    container_name: kinopub
+    image: kinopub:synology-v1.1.0-1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    user: "${PUID:-1026}:${PGID:-100}"
+    ports:
+      - "${BIND_IP:-192.168.2.10}:${PORT:-8765}:8765"
+    environment:
+      TZ: Asia/Jerusalem
+      HOME: /data
+      XDG_CONFIG_HOME: /data/.config
+      KINOPUB_REMOTE_USER: kinopub
+      KINOPUB_REMOTE_PASSWORD_FILE: /run/secrets/kinopub_password
+      KINOPUB_REMOTE_ALLOWED_HOSTS: "${BIND_IP:-192.168.2.10}:${PORT:-8765}"
+    volumes:
+      - ./state:/data
+      - ./state/machine-id:/etc/machine-id:ro
+      - ./downloads:/data/Downloads/kinopub
+    secrets:
+      - kinopub_password
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+    mem_limit: 2g
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  kinopub_password:
+    file: ./secrets/password

@@ -500,13 +500,13 @@ func (c *Client) RawPost(ctx context.Context, path string, form url.Values, out 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(bodyStr))
 	if err != nil {
-		return err
+		return fmt.Errorf("kino.watch API: cannot construct request")
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("kino.watch API %s: %w", path, err)
+		return fmt.Errorf("kino.watch API %s: %w", path, safeTransportError(err))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))

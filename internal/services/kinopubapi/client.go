@@ -57,7 +57,7 @@ type Client struct {
 	tokens    Tokens
 	persist   func(Tokens)
 	refreshMu sync.Mutex   // serializes token refreshes (see type doc)
-	debug     func(string) // optional raw-response logger for diagnostics
+	debug     func(string) // metadata-only OAuth diagnostics, never response contents
 }
 
 // Option customizes a Client.
@@ -81,8 +81,8 @@ func WithPersist(fn func(Tokens)) Option {
 	return func(c *Client) { c.persist = fn }
 }
 
-// WithDebug registers a logger that receives a one-line summary of every OAuth
-// response (status + truncated body), for diagnosing the device-login flow.
+// WithDebug registers an OAuth logger for HTTP status and grant_type only.
+// Full bodies and authorization parameters must never enter logs.
 func WithDebug(fn func(string)) Option {
 	return func(c *Client) { c.debug = fn }
 }
@@ -273,22 +273,38 @@ func (c *Client) oauth(ctx context.Context, path string, vals url.Values, out an
 	reqURL := c.host + path + "?" + vals.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("kino.watch auth: cannot construct request")
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("kino.watch auth request: %w", err)
+		return 0, fmt.Errorf("kino.watch auth request: %w", safeTransportError(err))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if c.debug != nil {
-		c.debug(fmt.Sprintf("POST %s?%s -> HTTP %d: %s", path, grantOf(vals), resp.StatusCode, snippet(body)))
+		c.debug(fmt.Sprintf("POST %s?%s -> HTTP %d", path, grantOf(vals), resp.StatusCode))
 	}
 	if jerr := json.Unmarshal(body, out); jerr != nil {
-		return resp.StatusCode, fmt.Errorf("kino.watch auth: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return resp.StatusCode, fmt.Errorf("kino.watch auth: HTTP %d: invalid JSON response", resp.StatusCode)
 	}
 	return resp.StatusCode, nil
+}
+
+// safeTransportError removes url.Error.URL, which would otherwise include
+// access_token, refresh_token and client_secret query parameters on failures.
+// Retain the underlying network error for context cancellation/retry checks.
+func safeTransportError(err error) error {
+	for {
+		var uerr *url.Error
+		if !errors.As(err, &uerr) {
+			return err
+		}
+		if uerr.Err == nil {
+			return errors.New("network request failed")
+		}
+		err = uerr.Err
+	}
 }
 
 // grantOf extracts the grant_type for debug logs (avoids logging the secret).
@@ -424,12 +440,12 @@ func (c *Client) fetch(ctx context.Context, reqURL string) (int, []byte, error) 
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, fmt.Errorf("cannot construct API request")
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, safeTransportError(err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))

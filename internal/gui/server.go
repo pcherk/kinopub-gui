@@ -131,7 +131,7 @@ func (s *Server) SetRestart(fn func()) { s.restart = fn }
 // localhost server from web pages: it rejects requests whose Host is not a
 // loopback address (defeating DNS-rebinding) and cross-origin requests carrying
 // a foreign Origin (defeating a malicious site's direct fetch to 127.0.0.1).
-func (s *Server) Handler() http.Handler { return guardLocalOnly(s.mux) }
+func (s *Server) Handler() http.Handler { return guardForDeployment(s.mux) }
 
 // guardLocalOnly wraps the mux with anti-rebinding / anti-CSRF checks suitable
 // for a loopback-only control server.
