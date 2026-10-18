@@ -87,3 +87,30 @@ user's Synology Container Manager. Synology/Docker handles log storage using
 its own runtime defaults. Check DSM Container Manager for journal growth or
 configure daemon-wide rotation if the installed Docker version supports it.
 No Go application changes, storage changes or image rebuild are needed.
+
+
+## Prepare for iPad (v1.1.0-3)
+
+In Offline Library use **Для iPad** on a downloaded movie or single episode.
+The NAS prepares an iPad-friendly MP4 file with defaults:
+
+- H.264 (maximum 1080p), AAC stereo 160 kb/s, `+faststart`, CRF 23.
+- When H.264/yuv420p is already suitable, copy the video without recoding.
+- One preparation runs at a time (limit NAS load).
+- Progress and cancellation are available through the UI.
+- Finished copies are preserved under `state/iPad-Exports/<hash>/`,
+  separate from the original films. Repeated preparation reuses existing copies.
+- **Скачать на iPad** sends a normal HTTP attachment that Safari saves to Files.
+- **Удалить подготовленную копию** removes only the export, never the source.
+- Existing mount paths and credentials are unchanged. No Web Station dependency.
+
+On iPad: open KinoPub in Safari, start the preparation, wait for completion,
+then tap Download and confirm the download in Safari. The downloaded MP4 can
+be played offline using iPadOS Files. When accessing over a public hostname,
+Synology Reverse Proxy and HTTPS must already work. This build allows
+`kino.pac.wiki` as well as the local LAN IP; change PUBLIC_HOST to override.
+
+The first audio track is used. Multi-language audio and embedded subtitles are
+not carried to the iPad preset. Complex/long files may take substantial CPU
+time or additional disk space. Completed MP4 copies remain until explicitly
+deleted from the UI. Do not delete `state/iPad-Exports` during conversion.

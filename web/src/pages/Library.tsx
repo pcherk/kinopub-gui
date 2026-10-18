@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Tablet,
   Tv,
   X,
   XCircle,
@@ -40,6 +41,7 @@ import { EmptyState, Modal, PosterImage, Spinner } from "../components/ui";
 import { JobCard } from "../components/JobCard";
 import { TitleDetail } from "../components/TitleDetail";
 import { OfflinePlayer } from "../components/OfflinePlayer";
+import { IPadPrepModal } from "../components/IPadPrepModal";
 
 // Shared empty array so `s.episodes ?? NO_EPISODES` keeps a stable identity and
 // the memos below don't recompute on every render.
@@ -201,16 +203,22 @@ function useSeriesActions(s: LibrarySeries, onDeleted: () => void) {
   return { openPath, remove, removeEpisode, deleting, removingKey };
 }
 
+function prepareForIPad(path: string) {
+  window.dispatchEvent(new CustomEvent("kinopub:ipad-prepare", { detail: path }));
+}
+
 // EpisodeRow is one file inside an episode list.
 function EpisodeRow({
   e,
   busy,
   onOpen,
+  onIPad,
   onDelete,
 }: {
   e: LibraryEpisode;
   busy: boolean;
   onOpen: () => void;
+  onIPad: () => void;
   onDelete: () => void;
 }) {
   const { t } = useI18n();
@@ -247,6 +255,15 @@ function EpisodeRow({
             <Play className="h-3.5 w-3.5" />
           </button>
         )}
+        {e.exists && (
+          <button
+            className="rounded-md p-1 text-slate-500 transition hover:bg-white/[0.08] hover:text-gold-300"
+            title="Подготовить для iPad"
+            onClick={onIPad}
+          >
+            <Tablet className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           className="rounded-md p-1 text-slate-500 transition hover:bg-ember-500/10 hover:text-ember-300 disabled:opacity-100"
           title={t("Delete this episode from disk")}
@@ -266,11 +283,13 @@ function EpisodeList({
   bySeason,
   removingKey,
   onOpen,
+  onIPad,
   onDelete,
 }: {
   bySeason: [number, LibraryEpisode[]][];
   removingKey: string | null;
   onOpen: (e: LibraryEpisode) => void;
+  onIPad: (e: LibraryEpisode) => void;
   onDelete: (e: LibraryEpisode) => void;
 }) {
   const { t } = useI18n();
@@ -294,6 +313,7 @@ function EpisodeList({
                 e={e}
                 busy={removingKey === e.key}
                 onOpen={() => onOpen(e)}
+                onIPad={() => onIPad(e)}
                 onDelete={() => onDelete(e)}
               />
             ))}
@@ -471,6 +491,11 @@ function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
                 <Play className="h-3.5 w-3.5" /> {t("Play")}
               </button>
             )}
+            {single && single.exists && (
+              <button className="btn-ghost px-3 py-1.5 text-xs text-gold-300" onClick={() => prepareForIPad(single.path)}>
+                <Tablet className="h-3.5 w-3.5" /> Для iPad
+              </button>
+            )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {canOpenCard && (
                 <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => onOpenCard(itemId)}>
@@ -498,6 +523,7 @@ function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
             bySeason={bySeason}
             removingKey={removingKey}
             onOpen={(e) => openPath(e.path)}
+            onIPad={(e) => prepareForIPad(e.path)}
             onDelete={removeEpisode}
           />
         </div>
@@ -616,6 +642,11 @@ function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
               <XCircle className="h-3.5 w-3.5" /> {t("File missing")}
             </span>
           )}
+          {playable && (
+            <button className="btn-ghost px-3 py-1.5 text-xs text-gold-200" onClick={() => prepareForIPad(single.path)}>
+              <Tablet className="h-4 w-4" /> Для iPad
+            </button>
+          )}
           <div className="flex items-center gap-1.5">
             {canOpenCard && (
               <button
@@ -688,6 +719,7 @@ function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
           bySeason={bySeason}
           removingKey={removingKey}
           onOpen={(e) => openPath(e.path)}
+            onIPad={(e) => prepareForIPad(e.path)}
           onDelete={removeEpisode}
         />
       </Modal>
@@ -720,6 +752,12 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   const { t } = useI18n();
   const [data, setData] = useState<LibraryResponse | null>(null);
   const [playingPath, setPlayingPath] = useState<string | null>(null);
+  const [ipadPath, setIPadPath] = useState<string | null>(null);
+  useEffect(() => {
+    const onPrepare = (event: Event) => setIPadPath((event as CustomEvent<string>).detail);
+    window.addEventListener("kinopub:ipad-prepare", onPrepare);
+    return () => window.removeEventListener("kinopub:ipad-prepare", onPrepare);
+  }, []);
   useEffect(() => {
     const onPlay = (event: Event) => setPlayingPath((event as CustomEvent<string>).detail);
     window.addEventListener("kinopub:local-play", onPlay);
@@ -859,6 +897,7 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   return (
     <>
       {playingPath && <OfflinePlayer key={playingPath} path={playingPath} onClose={() => setPlayingPath(null)} />}
+      {ipadPath && <IPadPrepModal key={ipadPath} path={ipadPath} onClose={() => setIPadPath(null)} />}
     <div className={clsx("mx-auto space-y-5", view === "grid" ? "max-w-6xl" : "max-w-4xl")}>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>

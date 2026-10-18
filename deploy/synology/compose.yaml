@@ -3,7 +3,7 @@
 services:
   kinopub:
     container_name: kinopub
-    image: kinopub:synology-v1.1.0-2
+    image: kinopub:synology-v1.1.0-3
     build:
       context: .
       dockerfile: Dockerfile
@@ -17,7 +17,7 @@ services:
       XDG_CONFIG_HOME: /data/.config
       KINOPUB_REMOTE_USER: kinopub
       KINOPUB_REMOTE_PASSWORD_FILE: /run/secrets/kinopub_password
-      KINOPUB_REMOTE_ALLOWED_HOSTS: "${BIND_IP:-192.168.2.10}:${PORT:-8765}"
+      KINOPUB_REMOTE_ALLOWED_HOSTS: "${BIND_IP:-192.168.2.10}:${PORT:-8765},${PUBLIC_HOST:-kino.pac.wiki}"
     volumes:
       - ./state:/data
       - ./state/machine-id:/etc/machine-id:ro

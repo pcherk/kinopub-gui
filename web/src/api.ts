@@ -566,6 +566,15 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
   return data as T;
 }
 
+export type IPadExportStatus = {
+  id: string;
+  status: "running" | "ready" | "failed" | "canceled" | "deleted";
+  percent: number;
+  fileName: string;
+  size?: number;
+  error?: string;
+};
+
 export const api = {
   state: () => req<Snapshot>("GET", "/api/state"),
   ffmpeg: () => req<FFmpegStatus>("GET", "/api/ffmpeg"),
@@ -620,6 +629,11 @@ export const api = {
   deleteLibraryEpisode: (dir: string, key: string) =>
     req<{ deleted: boolean }>("POST", "/api/library/delete-episode", { dir, key }),
   openPath: (path: string, reveal = false) => req<{ ok: boolean }>("POST", "/api/open", { path, reveal }),
+  ipadPrepare: (path: string) => req<IPadExportStatus>("POST", "/api/ipad/prepare", { path }),
+  ipadStatus: (id: string) => req<IPadExportStatus>("GET", `/api/ipad/status/${encodeURIComponent(id)}`),
+  ipadCancel: (id: string) => req<IPadExportStatus>("POST", `/api/ipad/cancel/${encodeURIComponent(id)}`),
+  ipadDownloadUrl: (id: string) => `/api/ipad/download/${encodeURIComponent(id)}`,
+  ipadDelete: (id: string) => req<IPadExportStatus>("POST", `/api/ipad/delete/${encodeURIComponent(id)}`),
   fs: (path: string) => req<FSListing>("GET", `/api/fs?path=${encodeURIComponent(path)}`),
 
   // Official kino.watch API auth (device-code).

@@ -56,6 +56,10 @@ type Server struct {
 
 	// Per-process secret signing the in-app player's HLS proxy URLs, so the
 	// proxy only fetches URLs this server itself produced (not an open proxy).
+	ipadMu     sync.Mutex
+	ipadJobs   map[string]*ipadJob
+	ipadActive string
+
 	hlsKey []byte
 	// hlsSem bounds concurrent upstream fetches to kino.watch's CDN: hls.js loads
 	// every audio/video rendition playlist at once, and the CDN rate-limits the
@@ -93,6 +97,7 @@ func NewServer(version string, static fs.FS) *Server {
 		settings: newSettingsStore(),
 		updater:  newUpdateChecker(version),
 		tools:    &toolInstaller{},
+		ipadJobs: make(map[string]*ipadJob),
 		hlsKey:   randomKey(32),
 		hlsSem:   make(chan struct{}, 4),
 	}
@@ -256,6 +261,11 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /api/open", s.handleOpenPath)
 	mux.HandleFunc("GET /api/local/video", s.handleLocalVideo)
 	mux.HandleFunc("GET /api/local/hls", s.handleLocalHLS)
+	mux.HandleFunc("POST /api/ipad/prepare", s.handleIPadPrepare)
+	mux.HandleFunc("GET /api/ipad/status/{id}", s.handleIPadStatus)
+	mux.HandleFunc("POST /api/ipad/cancel/{id}", s.handleIPadCancel)
+	mux.HandleFunc("GET /api/ipad/download/{id}", s.handleIPadDownload)
+	mux.HandleFunc("POST /api/ipad/delete/{id}", s.handleIPadDelete)
 	mux.HandleFunc("GET /api/fs", s.handleFS)
 	mux.HandleFunc("GET /api/img", s.handleImage)
 
