@@ -79,3 +79,11 @@ the MP4 container alone does not guarantee browser codec compatibility.
 
 For existing Synology installations, replace only Dockerfile/compose.yaml and
 rebuild the project. Keep state/, downloads/, secrets/ and .env unchanged.
+
+## Synology Compose compatibility
+
+The per-service `logging:` stanza was removed because it was rejected by the
+user's Synology Container Manager. Synology/Docker handles log storage using
+its own runtime defaults. Check DSM Container Manager for journal growth or
+configure daemon-wide rotation if the installed Docker version supports it.
+No Go application changes, storage changes or image rebuild are needed.
