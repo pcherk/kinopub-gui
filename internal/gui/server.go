@@ -59,6 +59,7 @@ type Server struct {
 	ipadMu     sync.Mutex
 	ipadJobs   map[string]*ipadJob
 	ipadActive string
+	ipadQueue  []string
 
 	hlsKey []byte
 	// hlsSem bounds concurrent upstream fetches to kino.watch's CDN: hls.js loads
@@ -119,6 +120,7 @@ func NewServer(version string, static fs.FS) *Server {
 	// as paused cards (failed ones keep their error) with Resume/Retry working —
 	// the engine skips completed episodes and continues partial .hls-tmp segments.
 	s.mgr.attachStore(newJobStore())
+	s.restoreIPadQueue()
 	s.routes()
 	return s
 }
@@ -262,6 +264,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /api/local/video", s.handleLocalVideo)
 	mux.HandleFunc("GET /api/local/hls", s.handleLocalHLS)
 	mux.HandleFunc("POST /api/ipad/prepare", s.handleIPadPrepare)
+	mux.HandleFunc("GET /api/ipad/queue", s.handleIPadQueue)
 	mux.HandleFunc("GET /api/ipad/status/{id}", s.handleIPadStatus)
 	mux.HandleFunc("POST /api/ipad/cancel/{id}", s.handleIPadCancel)
 	mux.HandleFunc("GET /api/ipad/download/{id}", s.handleIPadDownload)

@@ -568,7 +568,8 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
 
 export type IPadExportStatus = {
   id: string;
-  status: "running" | "ready" | "failed" | "canceled" | "deleted";
+  status: "running" | "queued" | "ready" | "failed" | "canceled" | "deleted";
+  position?: number;
   percent: number;
   fileName: string;
   size?: number;
@@ -630,6 +631,7 @@ export const api = {
     req<{ deleted: boolean }>("POST", "/api/library/delete-episode", { dir, key }),
   openPath: (path: string, reveal = false) => req<{ ok: boolean }>("POST", "/api/open", { path, reveal }),
   ipadPrepare: (path: string) => req<IPadExportStatus>("POST", "/api/ipad/prepare", { path }),
+  ipadQueue: () => req<IPadExportStatus[]>("GET", "/api/ipad/queue"),
   ipadStatus: (id: string) => req<IPadExportStatus>("GET", `/api/ipad/status/${encodeURIComponent(id)}`),
   ipadCancel: (id: string) => req<IPadExportStatus>("POST", `/api/ipad/cancel/${encodeURIComponent(id)}`),
   ipadDownloadUrl: (id: string) => `/api/ipad/download/${encodeURIComponent(id)}`,

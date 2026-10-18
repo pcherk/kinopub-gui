@@ -1,0 +1,4 @@
+# Only the Dockerfile is required as build context:
+# source is cloned from the pinned release branch/tag during Docker build.
+*
+!Dockerfile

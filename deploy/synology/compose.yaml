@@ -3,7 +3,7 @@
 services:
   kinopub:
     container_name: kinopub
-    image: kinopub:synology-v1.1.0-3
+    image: kinopub:synology-v1.1.0-4
     build:
       context: .
       dockerfile: Dockerfile
@@ -15,6 +15,8 @@ services:
       TZ: Asia/Jerusalem
       HOME: /data
       XDG_CONFIG_HOME: /data/.config
+      # iPad copies are visible in File Station: docker/kinopub/downloads/iPad
+      KINOPUB_IPAD_OUTPUT_DIR: /data/Downloads/kinopub/iPad
       KINOPUB_REMOTE_USER: kinopub
       KINOPUB_REMOTE_PASSWORD_FILE: /run/secrets/kinopub_password
       KINOPUB_REMOTE_ALLOWED_HOSTS: "${BIND_IP:-192.168.2.10}:${PORT:-8765},${PUBLIC_HOST:-kino.pac.wiki}"

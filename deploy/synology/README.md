@@ -114,3 +114,29 @@ The first audio track is used. Multi-language audio and embedded subtitles are
 not carried to the iPad preset. Complex/long files may take substantial CPU
 time or additional disk space. Completed MP4 copies remain until explicitly
 deleted from the UI. Do not delete `state/iPad-Exports` during conversion.
+
+
+## FIFO iPad preparation queue — v1.1.0-4
+
+The NAS still uses software FFmpeg, because DS1621xs+ / Intel Xeon D-1527 has
+no integrated Intel Quick Sync GPU. Multiple movies and episodes can be added:
+the first is processed, others wait FIFO (one FFmpeg conversion at a time).
+Re-adding the same movie does not duplicate it. Pending jobs survive a
+container restart in `state/.config/kinopub/ipad-queue.json`; interrupted
+running conversions are restarted from the beginning because ordinary MP4
+encoding cannot resume a partial output.
+
+**Location changes for NEW exports only:** all new iPad MP4s appear under
+`/docker/kinopub/downloads/iPad/<Title>/<Title> - S01E01 - iPad.mp4`,
+using the existing writable `./downloads` bind mount; no new volume or ACL
+setup is needed. The old `state/iPad-Exports` folder, including any previously
+finished MP4 or currently incomplete `.part`, is intentionally NOT moved,
+overwritten or deleted by an update. Let active exports finish before changing
+versions, and clean up old files only after verifying they are no longer needed.
+
+The list/grid still has a "Для iPad" action for each movie/episode. Use
+"Очередь iPad" in the Offline Library header to see running, queued, finished
+and failed jobs, download prepared files, or cancel an individual queued job.
+The NAS continues working if you close Safari or the dialog.
+
+No unsupported per-service `logging` stanza was introduced.

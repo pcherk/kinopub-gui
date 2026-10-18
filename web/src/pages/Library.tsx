@@ -897,7 +897,7 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   return (
     <>
       {playingPath && <OfflinePlayer key={playingPath} path={playingPath} onClose={() => setPlayingPath(null)} />}
-      {ipadPath && <IPadPrepModal key={ipadPath} path={ipadPath} onClose={() => setIPadPath(null)} />}
+      {ipadPath !== null && <IPadPrepModal key={ipadPath} path={ipadPath || undefined} onClose={() => setIPadPath(null)} />}
     <div className={clsx("mx-auto space-y-5", view === "grid" ? "max-w-6xl" : "max-w-4xl")}>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -913,6 +913,9 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button className="btn-ghost" onClick={() => setIPadPath("")}>
+            <Tablet className="h-4 w-4" /> Очередь iPad
+          </button>
           <button className="btn-ghost" onClick={onNew} title={t("Download by a kino.watch link")}>
             <Link2 className="h-4 w-4" /> {t("Advanced download")}
           </button>

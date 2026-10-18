@@ -31,6 +31,7 @@ type ipadJob struct {
 	Output   string             `json:"-"`
 	Source   string             `json:"-"`
 	Cancel   context.CancelFunc `json:"-"`
+	Position int                `json:"position,omitempty"`
 }
 
 type ipadProbe struct {
@@ -132,6 +133,12 @@ func ipadArgs(src, dst string, p ipadProbe) ([]string, float64, error) {
 
 // All prepared copies live on the state volume, separate from the raw downloads.
 func ipadExportsRoot() (string, error) {
+	if configured := os.Getenv("KINOPUB_IPAD_OUTPUT_DIR"); configured != "" {
+		if !filepath.IsAbs(configured) {
+			return "", errors.New("iPad export root must be absolute")
+		}
+		return filepath.Clean(configured), nil
+	}
 	home := os.Getenv("HOME")
 	if home == "" {
 		return "", errors.New("HOME not configured")
@@ -146,21 +153,8 @@ func ipadOutput(real string, info os.FileInfo) (string, string, error) {
 	}
 	hash := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d", real, info.Size(), info.ModTime().UnixNano())))
 	id := hex.EncodeToString(hash[:16])
-	stem := strings.TrimSuffix(filepath.Base(real), filepath.Ext(real))
-	// Avoid surprising control characters in Content-Disposition filenames.
-	stem = strings.Map(func(r rune) rune {
-		if r < 32 || r == 127 {
-			return -1
-		}
-		return r
-	}, stem)
-	if len(stem) > 150 {
-		stem = string([]rune(stem)[:min(len([]rune(stem)), 65)])
-	}
-	if stem == "" {
-		stem = "video"
-	}
-	out := filepath.Join(root, id, stem+"-iPad.mp4")
+	title, file := ipadFriendlyName(real)
+	out := filepath.Join(root, title, file)
 	return id, out, nil
 }
 
@@ -171,14 +165,14 @@ func (s *Server) ipadJobSnapshot(id string) (ipadJob, bool) {
 	if !ok {
 		return ipadJob{}, false
 	}
-	return *j, true
+	return s.ipadViewLocked(j), true
 }
 
 func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&input); err != nil {
+	if json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&input) != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
@@ -192,44 +186,61 @@ func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "iPad storage unavailable")
 		return
 	}
-
 	s.ipadMu.Lock()
-	if old, ok := s.ipadJobs[id]; ok && (old.Status == "running" || old.Status == "ready") {
-		copy := *old
-		s.ipadMu.Unlock()
-		if copy.Status == "ready" {
-			if stat, e := os.Stat(copy.Output); e == nil && stat.Size() > 0 {
-				writeJSON(w, http.StatusOK, copy)
-				return
-			}
-		} else {
-			writeJSON(w, http.StatusOK, copy)
+	if old := s.ipadJobs[id]; old != nil {
+		if old.Status == "running" || old.Status == "queued" {
+			view := s.ipadViewLocked(old)
+			s.ipadMu.Unlock()
+			writeJSON(w, http.StatusOK, view)
 			return
 		}
-		s.ipadMu.Lock()
+		if old.Status == "ready" {
+			if st, e := os.Stat(old.Output); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
+				view := s.ipadViewLocked(old)
+				s.ipadMu.Unlock()
+				writeJSON(w, http.StatusOK, view)
+				return
+			}
+		}
 	}
-	if s.ipadActive != "" {
-		s.ipadMu.Unlock()
-		writeErr(w, http.StatusConflict, "Сейчас готовится другой фильм для iPad")
-		return
+	// If another movie with an identical display title is already known, avoid
+	// overwriting its output. The suffix appears only for genuine name collisions.
+	for otherID, other := range s.ipadJobs {
+		if otherID != id && other.Output == out {
+			ext := filepath.Ext(out)
+			out = strings.TrimSuffix(out, ext) + " (" + id[:8] + ")" + ext
+			break
+		}
 	}
-	// Existing complete MP4s are durable and need no regeneration after restart.
 	if st, e := os.Stat(out); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
-		j := &ipadJob{ID: id, Status: "ready", Percent: 100, FileName: filepath.Base(out), Size: st.Size(), Output: out, Source: real}
+		j := &ipadJob{ID: id, Status: "ready", Percent: 100, FileName: filepath.Base(out),
+			Size: st.Size(), Output: out, Source: real}
 		s.ipadJobs[id] = j
-		copy := *j
+		_ = s.ipadSaveLocked()
+		view := s.ipadViewLocked(j)
 		s.ipadMu.Unlock()
-		writeJSON(w, http.StatusOK, copy)
+		writeJSON(w, http.StatusOK, view)
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	j := &ipadJob{ID: id, Status: "running", Percent: 0, FileName: filepath.Base(out), Output: out, Source: real, Cancel: cancel}
+	if len(s.ipadQueue) >= 100 {
+		s.ipadMu.Unlock()
+		writeErr(w, http.StatusTooManyRequests, "Очередь iPad заполнена")
+		return
+	}
+	j := &ipadJob{ID: id, Status: "queued", FileName: filepath.Base(out), Output: out, Source: real}
 	s.ipadJobs[id] = j
-	s.ipadActive = id
-	copy := *j
+	s.ipadQueue = append(s.ipadQueue, id)
+	if err := s.ipadSaveLocked(); err != nil {
+		delete(s.ipadJobs, id)
+		s.ipadQueue = s.ipadQueue[:len(s.ipadQueue)-1]
+		s.ipadMu.Unlock()
+		writeErr(w, http.StatusServiceUnavailable, "Не удалось сохранить очередь iPad")
+		return
+	}
+	s.ipadStartNextLocked()
+	view := s.ipadViewLocked(j)
 	s.ipadMu.Unlock()
-	go s.runIPadExport(ctx, j)
-	writeJSON(w, http.StatusOK, copy)
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) runIPadExport(ctx context.Context, j *ipadJob) {
@@ -238,6 +249,8 @@ func (s *Server) runIPadExport(ctx context.Context, j *ipadJob) {
 		if s.ipadActive == j.ID {
 			s.ipadActive = ""
 		}
+		_ = s.ipadSaveLocked()
+		s.ipadStartNextLocked()
 		s.ipadMu.Unlock()
 	}()
 	fail := func(msg string) {
@@ -342,14 +355,27 @@ func (s *Server) handleIPadCancel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "export not found")
 		return
 	}
-	if j.Status == "running" {
+	if j.Status == "queued" {
+		for i, id := range s.ipadQueue {
+			if id == j.ID {
+				s.ipadQueue = append(s.ipadQueue[:i], s.ipadQueue[i+1:]...)
+				break
+			}
+		}
+		j.Status = "canceled"
+		j.Error = "Задание удалено из очереди"
+		_ = s.ipadSaveLocked()
+	} else if j.Status == "running" {
 		j.Status = "canceled"
 		j.Error = "Обработка отменена"
-		j.Cancel()
+		if j.Cancel != nil {
+			j.Cancel()
+		}
+		_ = s.ipadSaveLocked()
 	}
-	copy := *j
+	view := s.ipadViewLocked(j)
 	s.ipadMu.Unlock()
-	writeJSON(w, http.StatusOK, copy)
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleIPadDelete(w http.ResponseWriter, r *http.Request) {
@@ -390,6 +416,7 @@ func (s *Server) handleIPadDelete(w http.ResponseWriter, r *http.Request) {
 	s.ipadMu.Lock()
 	j.Status = "deleted"
 	j.Size = 0
+	_ = s.ipadSaveLocked()
 	copy := *j
 	s.ipadMu.Unlock()
 	writeJSON(w, http.StatusOK, copy)
