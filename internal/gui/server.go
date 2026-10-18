@@ -254,6 +254,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /api/library/delete", s.handleDeleteLibrary)
 	mux.HandleFunc("POST /api/library/delete-episode", s.handleDeleteLibraryEpisode)
 	mux.HandleFunc("POST /api/open", s.handleOpenPath)
+	mux.HandleFunc("GET /api/local/video", s.handleLocalVideo)
+	mux.HandleFunc("GET /api/local/hls", s.handleLocalHLS)
 	mux.HandleFunc("GET /api/fs", s.handleFS)
 	mux.HandleFunc("GET /api/img", s.handleImage)
 

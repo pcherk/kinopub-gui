@@ -39,6 +39,7 @@ import { completedSignal, itemIdFromURL } from "../lib/queue";
 import { EmptyState, Modal, PosterImage, Spinner } from "../components/ui";
 import { JobCard } from "../components/JobCard";
 import { TitleDetail } from "../components/TitleDetail";
+import { OfflinePlayer } from "../components/OfflinePlayer";
 
 // Shared empty array so `s.episodes ?? NO_EPISODES` keeps a stable identity and
 // the memos below don't recompute on every render.
@@ -153,6 +154,10 @@ function useSeriesActions(s: LibrarySeries, onDeleted: () => void) {
   const [removingKey, setRemovingKey] = useState<string | null>(null);
 
   const openPath = async (path: string, reveal = false) => {
+    if (!reveal && /\.(mp4|m4v|webm|mkv)$/i.test(path)) {
+      window.dispatchEvent(new CustomEvent("kinopub:local-play", { detail: path }));
+      return;
+    }
     try {
       await api.openPath(path, reveal);
     } catch (e: any) {
@@ -714,6 +719,12 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   const { toast, jobs } = useApp();
   const { t } = useI18n();
   const [data, setData] = useState<LibraryResponse | null>(null);
+  const [playingPath, setPlayingPath] = useState<string | null>(null);
+  useEffect(() => {
+    const onPlay = (event: Event) => setPlayingPath((event as CustomEvent<string>).detail);
+    window.addEventListener("kinopub:local-play", onPlay);
+    return () => window.removeEventListener("kinopub:local-play", onPlay);
+  }, []);
   const [loading, setLoading] = useState(false);
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
   const [sortKey, setSortKey] = useState<SortKey>("recent");
@@ -846,6 +857,8 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   };
 
   return (
+    <>
+      {playingPath && <OfflinePlayer key={playingPath} path={playingPath} onClose={() => setPlayingPath(null)} />}
     <div className={clsx("mx-auto space-y-5", view === "grid" ? "max-w-6xl" : "max-w-4xl")}>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -1048,5 +1061,6 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
         />
       )}
     </div>
+    </>
   );
 }

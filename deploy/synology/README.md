@@ -55,3 +55,27 @@ For future versions:
 - upstream updates are merged into the maintained `synology` branch,
 - full tests and a Docker build are run,
 - a new release tag is created and pinned in Dockerfile / Compose.
+
+
+## Local browser playback (v1.1.0-2)
+
+The downloaded-media Play button no longer asks the Synology container to
+launch `xdg-open`. Instead, the authenticated GUI serves local files itself:
+
+- MP4/M4V/WebM: byte-range HTTP streaming to the browser's native video element.
+- MKV: FFmpeg prepares an HLS rendition in the existing state volume's
+  `.cache/kinopub-local-playback` directory. H.264 video is copied without
+  re-encoding; other video codecs are encoded to H.264 with two FFmpeg threads.
+- HLS segments are subject to cleanup after 30 minutes of inactivity.
+- Only media located inside configured download/library roots can be read.
+  Paths and symlinks escaping those roots are denied.
+- The source media is never modified or replaced.
+
+The first MKV playback can take longer; seeking is available within already
+prepared HLS segments until the background conversion finishes. Some very large
+or nonstandard MKV files may require significant CPU time and free disk space.
+For MP4 with unusual incompatible codecs, browser playback can still fail;
+the MP4 container alone does not guarantee browser codec compatibility.
+
+For existing Synology installations, replace only Dockerfile/compose.yaml and
+rebuild the project. Keep state/, downloads/, secrets/ and .env unchanged.
