@@ -140,3 +140,23 @@ and failed jobs, download prepared files, or cancel an individual queued job.
 The NAS continues working if you close Safari or the dialog.
 
 No unsupported per-service `logging` stanza was introduced.
+
+## v1.1.0-5 — compact iPad export + visible library status
+
+- Offline Library (grid, list and per-episode rows) now displays iPad progress,
+  queue position, or completed status. Statuses are polled every 4 seconds
+  while the library is open.
+- The iPad dialog now asks for a mode. **Compact (default):** transcode to
+  H.264 yuv420p up to 1280×720, preset veryfast, CRF 26, VBV maxrate 1800k,
+  AAC stereo 128k. A typical 2-hour film will usually occupy less than ~2 GB;
+  output sizes vary and CPU encode is slower than stream-copy.
+- **Fast:** preserve previous behaviour (copy compatible H.264 up to 1080p and
+  existing AAC where possible), or encode to 1080p for incompatible codecs.
+  Very large resulting MP4 files are expected in this mode.
+- Both profiles use separate IDs and output filenames, so re-creating an old
+  7 GB movie in compact mode never overwrites/reuses that existing large file.
+  Previous saved jobs without a profile are treated as the fast mode.
+- Completed jobs include a reduction percentage when source size is known.
+- FIFO and saved state remain compatible with v1.1.0-4. Old movies, exports,
+  queued work, mount paths and credentials are not moved or deleted.
+- **Important:** finish ongoing conversions before rebuilding the NAS image.

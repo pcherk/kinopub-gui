@@ -51,14 +51,16 @@ func ipadFriendlyName(real string) (string, string) {
 }
 
 type ipadSavedJob struct {
-	ID       string `json:"id"`
-	Status   string `json:"status"`
-	Percent  int    `json:"percent"`
-	FileName string `json:"fileName"`
-	Size     int64  `json:"size"`
-	Error    string `json:"error"`
-	Source   string `json:"source"`
-	Output   string `json:"output"`
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	Percent    int    `json:"percent"`
+	FileName   string `json:"fileName"`
+	Size       int64  `json:"size"`
+	Error      string `json:"error"`
+	Source     string `json:"source"`
+	Output     string `json:"output"`
+	Profile    string `json:"profile,omitempty"`
+	SourceSize int64  `json:"sourceSize,omitempty"`
 }
 type ipadSavedQueue struct {
 	Jobs  []ipadSavedJob `json:"jobs"`
@@ -88,7 +90,7 @@ func (s *Server) ipadSaveLocked() error {
 		j := s.ipadJobs[id]
 		result.Jobs = append(result.Jobs, ipadSavedJob{
 			ID: j.ID, Status: j.Status, Percent: j.Percent, FileName: j.FileName,
-			Size: j.Size, Error: j.Error, Source: j.Source, Output: j.Output,
+			Size: j.Size, Error: j.Error, Source: j.Source, Output: j.Output, Profile: j.Profile, SourceSize: j.SourceSize,
 		})
 	}
 	data, err := json.Marshal(result)
@@ -156,7 +158,14 @@ func (s *Server) restoreIPadQueue() {
 		if e != nil {
 			continue
 		}
-		id, _, e := ipadOutput(real, info)
+		profile := v.Profile
+		if profile == "" {
+			profile = "fast"
+		} // migration of pre-profile exports
+		if profile != "fast" && profile != "compact" {
+			continue
+		}
+		id, _, e := ipadOutputForProfile(real, info, profile)
 		if e != nil || id != v.ID {
 			continue
 		}
@@ -165,7 +174,7 @@ func (s *Server) restoreIPadQueue() {
 			continue
 		}
 		j := &ipadJob{ID: id, Source: real, Output: v.Output, Status: v.Status,
-			Percent: v.Percent, FileName: v.FileName, Size: v.Size, Error: v.Error}
+			Percent: v.Percent, FileName: v.FileName, Size: v.Size, Error: v.Error, Profile: profile, SourceSize: info.Size()}
 		if st, e := os.Stat(j.Output); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
 			j.Status = "ready"
 			j.Percent = 100
@@ -200,6 +209,10 @@ func (s *Server) restoreIPadQueue() {
 
 func (s *Server) ipadViewLocked(j *ipadJob) ipadJob {
 	v := *j
+	v.SourcePath = j.Source
+	if v.Profile == "" {
+		v.Profile = "fast"
+	}
 	if j.Status == "queued" {
 		for i, id := range s.ipadQueue {
 			if j.ID == id {

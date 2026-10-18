@@ -28,7 +28,7 @@ func TestIPadArgsProfiles(t *testing.T) {
 		AvgFrameRate string `json:"avg_frame_rate"`
 	}{CodecType: "video", CodecName: "h264", PixFmt: "yuv420p", Width: 1920, Height: 1080, BitRate: "4500000", AvgFrameRate: "30/1"})
 	p.Format.Duration = "123.45"
-	args, dur, err := ipadArgs("in.mkv", "out.mp4.part", p)
+	args, dur, err := ipadArgs("in.mkv", "out.mp4.part", p, "fast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +36,19 @@ func TestIPadArgsProfiles(t *testing.T) {
 	if dur != 123.45 || !strings.Contains(joined, "-c:v copy") {
 		t.Fatalf("expected stream copy: %s", joined)
 	}
+	compact, _, err := ipadArgs("in.mkv", "out.mp4.part", p, "compact")
+	if err != nil || !strings.Contains(strings.Join(compact, " "), "-maxrate 1800k") ||
+		!strings.Contains(strings.Join(compact, " "), "-c:v libx264") ||
+		!strings.Contains(strings.Join(compact, " "), "min(720,ih)") {
+		t.Fatal("compact must reencode at 720p with bitrate cap")
+	}
 	p.Streams[0].CodecName = "hevc"
-	args, _, err = ipadArgs("in.mkv", "out.mp4.part", p)
+	args, _, err = ipadArgs("in.mkv", "out.mp4.part", p, "fast")
 	if err != nil || !strings.Contains(strings.Join(args, " "), "-c:v libx264") {
 		t.Fatal("HEVC must be transcoded")
 	}
 	p.Streams[0].CodecType = "subtitle"
-	_, _, err = ipadArgs("in.mkv", "out.mp4.part", p)
+	_, _, err = ipadArgs("in.mkv", "out.mp4.part", p, "fast")
 	if err == nil {
 		t.Fatal("no video must fail")
 	}

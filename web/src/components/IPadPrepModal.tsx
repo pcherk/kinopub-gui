@@ -7,20 +7,20 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
   const [jobs, setJobs] = useState<IPadExportStatus[]>([]);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
-
+  const [profile, setProfile] = useState<"compact" | "fast">("compact");
+  const [justAdded, setJustAdded] = useState(false);
   const refresh = () => api.ipadQueue().then(setJobs).catch(() => {});
-
-  useEffect(() => {
-    if (!path) return;
-    let active = true;
+  const add = async () => {
+    if (!path || adding) return;
     setAdding(true);
     setError("");
-    api.ipadPrepare(path)
-      .then(() => { if (active) refresh(); })
-      .catch((e) => { if (active) setError(e.message || "Не удалось добавить в очередь"); })
-      .finally(() => { if (active) setAdding(false); });
-    return () => { active = false; };
-  }, [path]);
+    try {
+      await api.ipadPrepare(path, profile);
+      setJustAdded(true);
+      await refresh();
+    } catch (e: any) { setError(e.message || "Не удалось добавить в очередь"); }
+    finally { setAdding(false); }
+  };
 
   useEffect(() => {
     let active = true;
@@ -58,12 +58,35 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           </button>
         </div>
         <p className="mb-2 text-xs text-slate-400">
-          H.264 до 1080p, AAC stereo. FFmpeg готовит файлы по одному; остальные ждут своей очереди.
+          Компактный MP4 720p по умолчанию. NAS готовит файлы по одному; остальные ждут своей очереди.
         </p>
         <p className="mb-3 text-xs text-slate-400">
           Файлы находятся в downloads/iPad на Synology. Оригинальные фильмы не изменяются.
           Очередь продолжится после перезапуска контейнера.
         </p>
+        {path && (
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <p className="mb-2 break-words text-sm font-medium text-slate-100">{path.split("/").pop()}</p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setProfile("compact")}
+                className={profile === "compact" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
+                Компактный · 720p
+              </button>
+              <button type="button" onClick={() => setProfile("fast")}
+                className={profile === "fast" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
+                Быстрый · до 1080p
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-400">
+              {profile === "compact"
+                ? "Меньше места на iPad. H.264 с ограничением битрейта, обработка дольше."
+                : "Совместимый H.264 копируется без повторного кодирования. Файл может быть большим."}
+            </p>
+            <button type="button" className="btn-primary px-4 py-2 text-sm" onClick={add} disabled={adding}>
+              {adding ? "Добавляем…" : justAdded ? "Добавить ещё в выбранном режиме" : "Добавить в очередь"}
+            </button>
+          </div>
+        )}
         {adding && <p className="mb-2 text-sm text-gold-200">Добавляем фильм в очередь…</p>}
         {error && <p role="alert" className="mb-3 text-sm text-ember-300">{error}</p>}
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -74,7 +97,8 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           )}
           {ordered.map((job) => (
             <div key={job.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <p className="mb-2 break-words text-sm font-medium text-slate-100">{job.fileName}</p>
+              <p className="mb-1 break-words text-sm font-medium text-slate-100">{job.fileName}</p>
+              <p className="mb-2 text-xs text-slate-500">{job.profile === "compact" ? "Компактный · 720p" : "Быстрый · до 1080p"}</p>
               {job.status === "running" && (
                 <>
                   <p className="mb-1 text-xs text-slate-300">Подготовка: {job.percent}%</p>
@@ -87,7 +111,12 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
                 <p className="text-xs text-slate-400">Ожидает · №{job.position ?? "?"} в очереди</p>
               )}
               {job.status === "ready" && (
-                <p className="text-xs text-emerald-300">Готово · {((job.size ?? 0) / (1024 * 1024)).toFixed(0)} МБ</p>
+                <p className="text-xs text-emerald-300">
+                  Готово · {((job.size ?? 0) / (1024 * 1024)).toFixed(0)} МБ
+                  {job.sourceSize && job.size && job.sourceSize > job.size
+                    ? ` · на ${Math.round(100 * (job.sourceSize - job.size) / job.sourceSize)}% меньше оригинала`
+                    : ""}
+                </p>
               )}
               {job.status === "failed" && (
                 <p className="text-xs text-ember-300">{job.error || "Ошибка FFmpeg"}</p>

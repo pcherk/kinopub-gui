@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LibrarySeries } from "../api";
-import { itemIdFromURL, matchesQuery, supersededByLibrary } from "./Library";
+import type { LibrarySeries, IPadExportStatus } from "../api";
+import { itemIdFromURL, matchesQuery, supersededByLibrary, ipadStatusForPath } from "./Library";
 
 function series(over: Partial<LibrarySeries> = {}): LibrarySeries {
   return {
@@ -156,5 +156,28 @@ describe("supersededByLibrary", () => {
   it("matches a library entry that only knows its numeric series id", () => {
     const byId = entry({ inputUrl: undefined, seriesId: "409" });
     expect(supersededByLibrary(job(), [byId])).toBe(true);
+  });
+});
+
+describe("iPad status on library cards", () => {
+  function exportJob(id: string, status: IPadExportStatus["status"], profile: "fast" | "compact"): IPadExportStatus {
+    return { id, status, profile, percent: 45, fileName: "Film.mp4",
+      sourcePath: "/downloads/Film.mkv", position: 2 };
+  }
+  it("shows ready converted files without opening the queue", () => {
+    expect(ipadStatusForPath("/downloads/Film.mkv", [exportJob("1","ready","compact")])?.status).toBe("ready");
+  });
+  it("prioritizes compact export and ongoing preparation over an old fast result", () => {
+    const jobs = [
+      exportJob("1","ready","fast"),
+      exportJob("2","ready","compact"),
+      exportJob("3","queued","compact"),
+    ];
+    expect(ipadStatusForPath("/downloads/Film.mkv", jobs)?.status).toBe("queued");
+    expect(ipadStatusForPath("/downloads/Film.mkv", jobs.slice(0,2))?.profile).toBe("compact");
+  });
+  it("does not show stale canceled or unrelated jobs", () => {
+    expect(ipadStatusForPath("/downloads/Film.mkv", [exportJob("1","deleted","compact")])).toBeUndefined();
+    expect(ipadStatusForPath("/downloads/Other.mkv", [exportJob("1","ready","compact")])).toBeUndefined();
   });
 });

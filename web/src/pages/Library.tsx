@@ -31,6 +31,7 @@ import {
   type LibraryEpisode,
   type LibraryResponse,
   type LibrarySeries,
+  type IPadExportStatus,
 } from "../api";
 import { useApp } from "../store";
 import { useI18n } from "../i18n";
@@ -207,16 +208,43 @@ function prepareForIPad(path: string) {
   window.dispatchEvent(new CustomEvent("kinopub:ipad-prepare", { detail: path }));
 }
 
+export function ipadStatusForPath(path: string, jobs: IPadExportStatus[]): IPadExportStatus | undefined {
+  const matching = jobs.filter((j) => j.sourcePath === path && !["canceled", "deleted", "failed"].includes(j.status));
+  const weight = (j: IPadExportStatus) =>
+    j.status === "running" ? 4 : j.status === "queued" ? 3 :
+    j.status === "ready" && j.profile === "compact" ? 2 : j.status === "ready" ? 1 : 0;
+  return matching.sort((a, b) => weight(b) - weight(a))[0];
+}
+
+function ipadLabel(job?: IPadExportStatus): string {
+  if (!job) return "";
+  if (job.status === "running") return `iPad · Готовится ${job.percent}%`;
+  if (job.status === "queued") return `iPad · Очередь №${job.position ?? "?"}`;
+  if (job.status === "ready") return `iPad · Готово (${job.profile === "compact" ? "компактный" : "быстрый"})`;
+  return "";
+}
+
+function ipadCardLabel(s: LibrarySeries, jobs: IPadExportStatus[]): string {
+  const found = (s.episodes ?? []).filter((e) => e.exists).map((e) => ipadStatusForPath(e.path, jobs)).filter(Boolean);
+  if (found.length === 0) return "";
+  const working = found.find((j) => j?.status === "running") || found.find((j) => j?.status === "queued");
+  if (working) return ipadLabel(working);
+  if (s.episodes.length === 1) return ipadLabel(found[0]);
+  return `iPad · Готово ${found.filter((j) => j?.status === "ready").length}/${s.episodes.filter((e) => e.exists).length}`;
+}
+
 // EpisodeRow is one file inside an episode list.
 function EpisodeRow({
   e,
   busy,
+  ipadJob,
   onOpen,
   onIPad,
   onDelete,
 }: {
   e: LibraryEpisode;
   busy: boolean;
+  ipadJob?: IPadExportStatus;
   onOpen: () => void;
   onIPad: () => void;
   onDelete: () => void;
@@ -242,6 +270,9 @@ function EpisodeRow({
       <span className={clsx("min-w-0 flex-1 truncate", e.exists ? "text-slate-300" : "text-slate-500 line-through")}>
         {e.title || t("Episode {n}", { n: e.episode })}
       </span>
+      {ipadJob && <span title={ipadLabel(ipadJob)} className={clsx("shrink-0 text-[10px]", ipadJob.status === "ready" ? "text-emerald-300" : "text-gold-300")}>
+        {ipadJob.status === "ready" ? "iPad ✓" : ipadJob.status === "running" ? `iPad ${ipadJob.percent}%` : "iPad ⏳"}
+      </span>}
       {e.resolution && <span className="hidden shrink-0 text-[11px] text-slate-500 sm:inline">{e.resolution}</span>}
       <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-slate-500">{bytes(e.bytes)}</span>
       {/* Row actions stay visible on touch screens (no hover) and fade in on desktop. */}
@@ -282,12 +313,14 @@ function EpisodeRow({
 function EpisodeList({
   bySeason,
   removingKey,
+  ipadJobs,
   onOpen,
   onIPad,
   onDelete,
 }: {
   bySeason: [number, LibraryEpisode[]][];
   removingKey: string | null;
+  ipadJobs: IPadExportStatus[];
   onOpen: (e: LibraryEpisode) => void;
   onIPad: (e: LibraryEpisode) => void;
   onDelete: (e: LibraryEpisode) => void;
@@ -312,6 +345,7 @@ function EpisodeList({
                 key={e.key}
                 e={e}
                 busy={removingKey === e.key}
+                ipadJob={ipadStatusForPath(e.path, ipadJobs)}
                 onOpen={() => onOpen(e)}
                 onIPad={() => onIPad(e)}
                 onDelete={() => onDelete(e)}
@@ -372,9 +406,10 @@ type CardProps = {
   onDeleted: () => void;
   onOpenCard: (id: string) => void;
   onPickGenre: (genre: string) => void;
+  ipadJobs: IPadExportStatus[];
 };
 
-function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
+function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre, ipadJobs }: CardProps) {
   const { t } = useI18n();
   const { kpauth } = useApp();
   const itemId = itemIdOf(s);
@@ -462,6 +497,11 @@ function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
             </div>
           )}
 
+          {ipadCardLabel(s, ipadJobs) && (
+            <p className={clsx("mt-2 text-xs font-medium", ipadCardLabel(s, ipadJobs).includes("Готово") ? "text-emerald-300" : "text-gold-300")}>
+              <Tablet className="mr-1 inline h-3.5 w-3.5" />{ipadCardLabel(s, ipadJobs)}
+            </p>
+          )}
           {(missing > 0 || (single && !single.exists)) && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-ember-500/[0.08] px-2 py-1 text-xs text-ember-400">
               <XCircle className="h-3.5 w-3.5 shrink-0" />
@@ -522,6 +562,7 @@ function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
           <EpisodeList
             bySeason={bySeason}
             removingKey={removingKey}
+          ipadJobs={ipadJobs}
             onOpen={(e) => openPath(e.path)}
             onIPad={(e) => prepareForIPad(e.path)}
             onDelete={removeEpisode}
@@ -535,7 +576,7 @@ function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
 // SeriesTile is the poster-grid form of a library entry. Its primary action is
 // spelled out twice — as a permanent badge on the poster and as a labelled
 // button underneath — so it never depends on hover to be discoverable.
-function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
+function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre, ipadJobs }: CardProps) {
   const { t } = useI18n();
   const { kpauth } = useApp();
   const itemId = itemIdOf(s);
@@ -595,6 +636,14 @@ function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
             title={single ? t("File missing") : t("{n} missing", { n: missing })}
           >
             <XCircle className="h-3.5 w-3.5" />
+          </span>
+        )}
+        {ipadCardLabel(s, ipadJobs) && (
+          <span className={clsx(
+            "pointer-events-none absolute right-1.5 top-1.5 z-20 rounded-md bg-black/85 px-1.5 py-1 text-[10px] font-semibold",
+            ipadCardLabel(s, ipadJobs).includes("Готово") ? "text-emerald-300" : "text-gold-300"
+          )} title={ipadCardLabel(s, ipadJobs)}>
+            iPad {ipadCardLabel(s, ipadJobs).includes("Готово") ? "✓" : "⏳"}
           </span>
         )}
         {quality && (
@@ -693,6 +742,11 @@ function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
         {s.updatedAt && ` · ${relTime(s.updatedAt, t)}`}
         {missing > 0 && <span className="text-ember-400"> · {t("{n} missing", { n: missing })}</span>}
       </p>
+      {ipadCardLabel(s, ipadJobs) && (
+        <p className={clsx("mt-1 truncate text-[11px] font-medium", ipadCardLabel(s, ipadJobs).includes("Готово") ? "text-emerald-300" : "text-gold-300")}>
+          <Tablet className="mr-1 inline h-3 w-3" />{ipadCardLabel(s, ipadJobs)}
+        </p>
+      )}
       {genres.length > 0 && (
         <p className="truncate text-[11px] text-slate-600" title={genres.join(", ")}>
           {genres.slice(0, 2).join(" · ")}
@@ -718,6 +772,7 @@ function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre }: CardProps) {
         <EpisodeList
           bySeason={bySeason}
           removingKey={removingKey}
+          ipadJobs={ipadJobs}
           onOpen={(e) => openPath(e.path)}
             onIPad={(e) => prepareForIPad(e.path)}
           onDelete={removeEpisode}
@@ -753,6 +808,14 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   const [data, setData] = useState<LibraryResponse | null>(null);
   const [playingPath, setPlayingPath] = useState<string | null>(null);
   const [ipadPath, setIPadPath] = useState<string | null>(null);
+  const [ipadJobs, setIPadJobs] = useState<IPadExportStatus[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const update = () => api.ipadQueue().then((items) => { if (alive) setIPadJobs(items); }).catch(() => {});
+    update();
+    const timer = window.setInterval(update, 4000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, []);
   useEffect(() => {
     const onPrepare = (event: Event) => setIPadPath((event as CustomEvent<string>).detail);
     window.addEventListener("kinopub:ipad-prepare", onPrepare);
@@ -889,6 +952,7 @@ export function LibraryPage({ onNew }: { onNew: () => void }) {
   };
 
   const cardProps = {
+    ipadJobs,
     onDeleted: load,
     onOpenCard: (id: string) => pushRoute({ page: "library", itemId: id }),
     onPickGenre: setGenre,

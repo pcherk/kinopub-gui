@@ -90,3 +90,24 @@ func TestIPadQueueFIFOAndRestore(t *testing.T) {
 		t.Fatal("unreadable display title")
 	}
 }
+
+func TestProfiledOutputDoesNotOverwriteOldFastExport(t *testing.T) {
+	t.Setenv("KINOPUB_IPAD_OUTPUT_DIR", t.TempDir())
+	f := filepath.Join(t.TempDir(), "Movie.mp4")
+	if err := os.WriteFile(f, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stat, _ := os.Stat(f)
+	oldID, oldPath, _ := ipadOutput(f, stat)
+	fastID, fastPath, _ := ipadOutputForProfile(f, stat, "fast")
+	compactID, compactPath, _ := ipadOutputForProfile(f, stat, "compact")
+	if oldID != fastID || oldPath != fastPath {
+		t.Fatal("old exports must preserve their identity")
+	}
+	if compactID == oldID || compactPath == oldPath {
+		t.Fatal("compact must never reuse old large file")
+	}
+	if !strings.Contains(compactPath, "Compact") {
+		t.Fatal("compact output must be distinct")
+	}
+}

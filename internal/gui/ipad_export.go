@@ -22,16 +22,19 @@ import (
 // An exported iPad copy is deliberately independent of the download library.
 // Nothing here removes or modifies the original movie or episode.
 type ipadJob struct {
-	ID       string             `json:"id"`
-	Status   string             `json:"status"`
-	Percent  int                `json:"percent"`
-	FileName string             `json:"fileName"`
-	Size     int64              `json:"size,omitempty"`
-	Error    string             `json:"error,omitempty"`
-	Output   string             `json:"-"`
-	Source   string             `json:"-"`
-	Cancel   context.CancelFunc `json:"-"`
-	Position int                `json:"position,omitempty"`
+	ID         string             `json:"id"`
+	Status     string             `json:"status"`
+	Percent    int                `json:"percent"`
+	FileName   string             `json:"fileName"`
+	Size       int64              `json:"size,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	Output     string             `json:"-"`
+	Source     string             `json:"-"`
+	Cancel     context.CancelFunc `json:"-"`
+	Position   int                `json:"position,omitempty"`
+	Profile    string             `json:"profile,omitempty"`
+	SourcePath string             `json:"sourcePath,omitempty"`
+	SourceSize int64              `json:"sourceSize,omitempty"`
 }
 
 type ipadProbe struct {
@@ -67,7 +70,7 @@ func ipadProbeFile(ctx context.Context, filename string) (ipadProbe, error) {
 	return p, nil
 }
 
-func ipadArgs(src, dst string, p ipadProbe) ([]string, float64, error) {
+func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, error) {
 	var video, audio *struct {
 		CodecType    string `json:"codec_type"`
 		CodecName    string `json:"codec_name"`
@@ -103,27 +106,34 @@ func ipadArgs(src, dst string, p ipadProbe) ([]string, float64, error) {
 			fps = numerator / denominator
 		}
 	}
-	// Video copy when the source is already iPad-friendly and reasonably sized.
-	fast := video.CodecName == "h264" && video.PixFmt == "yuv420p" &&
+	// The compact preset is the default for an iPad: scaled 720p H.264 with
+	// bounded bitrate. Stream copy is available only in the explicit fast preset.
+	// Copying 6 Mbps H.264 was creating multi-gigabyte iPad exports.
+	fast := profile == "fast" && video.CodecName == "h264" && video.PixFmt == "yuv420p" &&
 		video.Width > 0 && video.Height > 0 && video.Width <= 1920 && video.Height <= 1080 &&
 		(fps == 0 || fps <= 60) && (bitrate == 0 || bitrate <= 6_000_000)
 	if fast {
 		args = append(args, "-c:v", "copy", "-tag:v", "avc1")
-	} else {
+	} else if profile == "fast" {
 		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
 			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+			"-threads", "2")
+	} else {
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+			"-maxrate", "1800k", "-bufsize", "3600k",
+			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
 			"-threads", "2")
 	}
 	// Stereo AAC for the native Files/Photos player. Keep first audio track only.
 	if audio != nil {
 		audioBitrate, _ := strconv.ParseInt(audio.BitRate, 10, 64)
 		sampleRate, _ := strconv.Atoi(audio.SampleRate)
-		if audio.CodecName == "aac" && audio.Channels > 0 && audio.Channels <= 2 &&
+		if profile == "fast" && audio.CodecName == "aac" && audio.Channels > 0 && audio.Channels <= 2 &&
 			(sampleRate == 0 || sampleRate <= 48000) &&
 			(audioBitrate == 0 || audioBitrate <= 192_000) {
 			args = append(args, "-c:a", "copy")
 		} else {
-			args = append(args, "-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "160k")
+			args = append(args, "-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k")
 		}
 	}
 	args = append(args, "-movflags", "+faststart", "-f", "mp4",
@@ -158,6 +168,19 @@ func ipadOutput(real string, info os.FileInfo) (string, string, error) {
 	return id, out, nil
 }
 
+// Compact exports get a new identity and file name. Previously prepared
+// high-bitrate MP4s remain available independently as the fast profile.
+func ipadOutputForProfile(real string, info os.FileInfo, profile string) (string, string, error) {
+	id, old, err := ipadOutput(real, info)
+	if err != nil || profile != "compact" {
+		return id, old, err
+	}
+	h := sha256.Sum256([]byte("ipad-compact-720-v1|" + id))
+	id = hex.EncodeToString(h[:16])
+	out := strings.TrimSuffix(old, ".mp4") + " - Compact.mp4"
+	return id, out, nil
+}
+
 func (s *Server) ipadJobSnapshot(id string) (ipadJob, bool) {
 	s.ipadMu.Lock()
 	defer s.ipadMu.Unlock()
@@ -170,7 +193,8 @@ func (s *Server) ipadJobSnapshot(id string) (ipadJob, bool) {
 
 func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Path string `json:"path"`
+		Path    string `json:"path"`
+		Profile string `json:"profile"`
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&input) != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -181,7 +205,14 @@ func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "video not in library")
 		return
 	}
-	id, out, err := ipadOutput(real, info)
+	if input.Profile == "" {
+		input.Profile = "compact"
+	}
+	if input.Profile != "compact" && input.Profile != "fast" {
+		writeErr(w, http.StatusBadRequest, "invalid iPad profile")
+		return
+	}
+	id, out, err := ipadOutputForProfile(real, info, input.Profile)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "iPad storage unavailable")
 		return
@@ -214,7 +245,7 @@ func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 	}
 	if st, e := os.Stat(out); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
 		j := &ipadJob{ID: id, Status: "ready", Percent: 100, FileName: filepath.Base(out),
-			Size: st.Size(), Output: out, Source: real}
+			Size: st.Size(), Output: out, Source: real, Profile: input.Profile, SourceSize: info.Size()}
 		s.ipadJobs[id] = j
 		_ = s.ipadSaveLocked()
 		view := s.ipadViewLocked(j)
@@ -227,7 +258,7 @@ func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusTooManyRequests, "Очередь iPad заполнена")
 		return
 	}
-	j := &ipadJob{ID: id, Status: "queued", FileName: filepath.Base(out), Output: out, Source: real}
+	j := &ipadJob{ID: id, Status: "queued", FileName: filepath.Base(out), Output: out, Source: real, Profile: input.Profile, SourceSize: info.Size()}
 	s.ipadJobs[id] = j
 	s.ipadQueue = append(s.ipadQueue, id)
 	if err := s.ipadSaveLocked(); err != nil {
@@ -272,7 +303,7 @@ func (s *Server) runIPadExport(ctx context.Context, j *ipadJob) {
 	}
 	tmp := j.Output + ".part"
 	defer os.Remove(tmp)
-	args, duration, err := ipadArgs(j.Source, tmp, p)
+	args, duration, err := ipadArgs(j.Source, tmp, p, j.Profile)
 	if err != nil {
 		fail("Файл не содержит видеодорожку")
 		return
