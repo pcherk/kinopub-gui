@@ -8,6 +8,7 @@ import {
   Film,
   FolderOpen,
   HardDrive,
+  Download,
   Layers,
   LayoutGrid,
   Library as LibraryIcon,
@@ -296,6 +297,13 @@ function EpisodeRow({
             <Tablet className="h-3.5 w-3.5" />
           </button>
         )}
+        {ipadJob?.status === "ready" && (
+          <a href={api.ipadDownloadUrl(ipadJob.id)} download={ipadJob.fileName}
+            className="rounded-md bg-emerald-500/10 p-1 text-emerald-300"
+            title="Скачать готовый MP4 на это устройство">
+            <Download className="h-4 w-4" />
+          </a>
+        )}
         <button
           className="rounded-md p-1 text-slate-500 transition hover:bg-ember-500/10 hover:text-ember-300 disabled:opacity-100"
           title={t("Delete this episode from disk")}
@@ -537,6 +545,13 @@ function SeriesCard({ s, onDeleted, onOpenCard, onPickGenre, ipadJobs }: CardPro
                 <Tablet className="h-3.5 w-3.5" /> Для iPad
               </button>
             )}
+            {single && ipadStatusForPath(single.path, ipadJobs)?.status === "ready" && (
+              <a className="btn-ghost px-3 py-1.5 text-xs text-emerald-300"
+                href={api.ipadDownloadUrl(ipadStatusForPath(single.path, ipadJobs)!.id)}
+                download={ipadStatusForPath(single.path, ipadJobs)!.fileName}>
+                <Download className="h-3.5 w-3.5" /> Скачать MP4
+              </a>
+            )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {canOpenCard && (
                 <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => onOpenCard(itemId)}>
@@ -696,6 +711,13 @@ function SeriesTile({ s, onDeleted, onOpenCard, onPickGenre, ipadJobs }: CardPro
             <button className="btn-ghost px-3 py-1.5 text-xs text-gold-200" onClick={() => prepareForIPad(single.path)}>
               <Tablet className="h-4 w-4" /> Для iPad
             </button>
+          )}
+          {playable && ipadStatusForPath(single.path, ipadJobs)?.status === "ready" && (
+            <a className="btn-ghost px-3 py-1.5 text-xs text-emerald-300"
+              href={api.ipadDownloadUrl(ipadStatusForPath(single.path, ipadJobs)!.id)}
+              download={ipadStatusForPath(single.path, ipadJobs)!.fileName}>
+              <Download className="h-4 w-4" /> Скачать MP4
+            </a>
           )}
           <div className="flex items-center gap-1.5">
             {canOpenCard && (

@@ -9,6 +9,8 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
   const [adding, setAdding] = useState(false);
   const [profile, setProfile] = useState<"balanced" | "compact" | "fast">("balanced");
   const [justAdded, setJustAdded] = useState(false);
+  const [bulkBusy,setBulkBusy] = useState(false);
+  const [bulkMessage,setBulkMessage] = useState("");
   const refresh = () => api.ipadQueue().then(setJobs).catch(() => {});
   const add = async () => {
     if (!path || adding) return;
@@ -31,6 +33,27 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
     const timer = window.setInterval(load, 2000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
+
+  const bulkPrepare = async () => {
+    if (bulkBusy) return;
+    if (!window.confirm("Добавить все скачанные фильмы и серии в очередь iPad? Уже готовые или добавленные будут пропущены.")) return;
+    setBulkBusy(true);
+    setError("");
+    try {
+      const result=await api.ipadPrepareAll(profile);
+      setBulkMessage(`Добавлено: ${result.added}. Пропущено: ${result.skipped}.${result.queueFull ? " Очередь заполнена — остальные можно добавить позже." : ""}`);
+      await refresh();
+    } catch (e: any) {setError(e.message || "Не удалось поставить всё в очередь");}
+    finally {setBulkBusy(false);}
+  };
+  const clearHistory = async () => {
+    if (!window.confirm("Очистить отменённые, неудачные и отсутствующие записи? Оригиналы и готовые MP4 не удаляются.")) return;
+    try {
+      const result=await api.ipadClear();
+      setBulkMessage(`Убрано записей из истории: ${result.removed}`);
+      await refresh();
+    } catch (e: any) {setError(e.message || "Не удалось очистить историю");}
+  };
 
   const cancel = async (id: string) => {
     try { await api.ipadCancel(id); await refresh(); }
@@ -58,7 +81,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           </button>
         </div>
         <p className="mb-2 text-xs text-slate-400">
-          Оптимальное качество 1080p по умолчанию. NAS готовит файлы по одному; остальные ждут очереди.
+          Оптимальное качество 1080p по умолчанию. NAS готовит до двух файлов одновременно; остальные ждут очереди.
         </p>
         <p className="mb-3 text-xs text-slate-400">
           Файлы находятся в downloads/iPad на Synology. Оригинальные фильмы не изменяются.
@@ -93,6 +116,15 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
             </button>
           </div>
         )}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-primary px-3 py-2 text-sm" onClick={bulkPrepare} disabled={bulkBusy}>
+            {bulkBusy ? "Добавляем…" : "Подготовить ВСЕ фильмы для iPad"}
+          </button>
+          <button type="button" className="btn-ghost px-3 py-2 text-xs" onClick={clearHistory}>
+            Очистить историю ошибок
+          </button>
+        </div>
+        {bulkMessage && <p role="status" className="mb-3 text-xs text-emerald-300">{bulkMessage}</p>}
         {adding && <p className="mb-2 text-sm text-gold-200">Добавляем фильм в очередь…</p>}
         {error && <p role="alert" className="mb-3 text-sm text-ember-300">{error}</p>}
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -141,7 +173,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
                       href={api.ipadDownloadUrl(job.id)}
                       download={job.fileName}
                     >
-                      <Download className="h-4 w-4" /> Скачать на iPad
+                      <Download className="h-4 w-4" /> СКАЧАТЬ MP4 на это устройство
                     </a>
                     <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => deleteCopy(job.id)}>
                       Удалить копию
@@ -152,9 +184,13 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs text-slate-400">
-          Можешь закрыть окно, поставить ещё фильмы в очередь или уйти со страницы.
-        </p>
+        <div className="mt-3 border-t border-white/10 pt-3 text-xs text-slate-300">
+          <p className="font-semibold text-gold-200">Сохранение для просмотра без интернета</p>
+          <p className="mt-1">1. Нажми «СКАЧАТЬ MP4 на это устройство» у готового фильма.</p>
+          <p className="mt-1">2. В Safari открой значок загрузок (стрелка), затем приложение «Файлы» → «Загрузки».</p>
+          <p className="mt-1">3. Для надёжного офлайн-просмотра перемести MP4 в «На моём iPad».</p>
+          <p className="mt-2 text-slate-500">Можно закрыть окно — NAS продолжит подготовку.</p>
+        </div>
       </div>
     </div>
   );

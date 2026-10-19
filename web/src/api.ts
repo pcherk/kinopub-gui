@@ -636,6 +636,9 @@ export const api = {
   ipadPrepare: (path: string, profile: "balanced" | "compact" | "fast" = "balanced") =>
     req<IPadExportStatus>("POST", "/api/ipad/prepare", { path, profile }),
   ipadQueue: () => req<IPadExportStatus[]>("GET", "/api/ipad/queue"),
+  ipadPrepareAll: (profile: "balanced" | "compact" | "fast" = "balanced") =>
+    req<{ added: number; skipped: number; total: number; queueFull: boolean }>("POST", "/api/ipad/prepare-all", { profile }),
+  ipadClear: () => req<{ removed: number }>("POST", "/api/ipad/clear"),
   ipadStatus: (id: string) => req<IPadExportStatus>("GET", `/api/ipad/status/${encodeURIComponent(id)}`),
   ipadCancel: (id: string) => req<IPadExportStatus>("POST", `/api/ipad/cancel/${encodeURIComponent(id)}`),
   ipadDownloadUrl: (id: string) => `/api/ipad/download/${encodeURIComponent(id)}`,

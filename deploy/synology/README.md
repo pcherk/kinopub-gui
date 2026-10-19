@@ -187,3 +187,35 @@ Before updating: allow running exports to complete, back up state/secrets/.env
 and replace only Dockerfile, compose.yaml and .dockerignore. Rebuild the
 existing Synology Container Manager project. Confirm new result on an iPad
 using a representative short scene before adding many large films.
+
+
+## v1.1.0-7 — parallel conversion, bulk enqueue and clear downloads
+
+- **Two simultaneous FFmpeg conversions by default** on Synology DS1621xs+
+  (Intel Xeon D-1527 4C/8T). Each encoder retains its existing 2-thread
+  cap; choose `IPAD_CONCURRENT=1` in `.env` to prioritize other workloads,
+  followed by a normal container recreation. Concurrency is capped at 2.
+- **Faster optimized preset:** balanced 1080p H.264 now uses
+  `libx264 -preset veryfast -crf 21`, maximum 4000 kbps. This deliberately
+  trades compression efficiency for throughput; output size may increase
+  somewhat and visual quality must be checked with your movies.
+- **Prepare ALL** adds completed library movies and episodes to the same
+  persisted FIFO queue, with duplicate/ready-file detection. Max 100 queued
+  jobs; any others can be added after the queue drains. The user confirms
+  the bulk action before it starts.
+- Queue retrieval automatically removes entries whose completed MP4 was
+  removed in File Station, old `Готовый файл отсутствует` errors, and
+  canceled/deleted records. **Очистить историю ошибок** also removes
+  other failed queue records. Neither operation removes original media,
+  valid prepared MP4s, or active/queued conversions.
+- The prepared-film actions are much more visible: **СКАЧАТЬ MP4 на это
+  устройство** in the queue, **Скачать MP4** on prepared library movie
+  cards and download icons on prepared series episodes. The queue gives
+  Safari → Downloads → Files → On My iPad instructions.
+- Backward compatible with v1.1.0-6 state and optimized/compact/fast
+  exports. Storage mounts and credentials remain unchanged.
+
+**Update:** allow any currently running job to finish before rebuilding.
+Back up `state`, `secrets` and `.env`. Replace only `Dockerfile`,
+`compose.yaml`, `.dockerignore` from the ZIP in the current DSM project;
+rebuild and recreate. Don't delete `downloads`, `state` or `machine-id`.

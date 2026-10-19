@@ -121,7 +121,7 @@ func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, 
 	} else if profile == "balanced" {
 		// iPad quality default: retain up to 1080p, a gentler CRF and enough
 		// peak bitrate for moving/dark scenes. Never upscale small sources.
-		args = append(args, "-c:v", "libx264", "-preset", "faster", "-crf", "22",
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
 			"-maxrate", "4000k", "-bufsize", "8000k",
 			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
 			"-threads", "2")
@@ -211,6 +211,53 @@ func (s *Server) ipadJobSnapshot(id string) (ipadJob, bool) {
 	return s.ipadViewLocked(j), true
 }
 
+// Queue mutations are serialized, making repeat clicks and bulk import idempotent.
+func (s *Server) ipadEnqueue(real string, info os.FileInfo, profile string) (ipadJob, int, error) {
+	id, out, err := ipadOutputForProfile(real, info, profile)
+	if err != nil {
+		return ipadJob{}, http.StatusInternalServerError, errors.New("iPad storage unavailable")
+	}
+	s.ipadMu.Lock()
+	defer s.ipadMu.Unlock()
+	if old := s.ipadJobs[id]; old != nil {
+		if old.Status == "running" || old.Status == "queued" {
+			return s.ipadViewLocked(old), http.StatusOK, nil
+		}
+		if old.Status == "ready" {
+			if st, e := os.Stat(old.Output); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
+				return s.ipadViewLocked(old), http.StatusOK, nil
+			}
+		}
+	}
+	for otherID, other := range s.ipadJobs {
+		if otherID != id && other.Output == out {
+			ext := filepath.Ext(out)
+			out = strings.TrimSuffix(out, ext) + " (" + id[:8] + ")" + ext
+			break
+		}
+	}
+	if st, e := os.Stat(out); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
+		j := &ipadJob{ID: id, Status: "ready", Percent: 100, FileName: filepath.Base(out),
+			Size: st.Size(), Output: out, Source: real, Profile: profile, SourceSize: info.Size()}
+		s.ipadJobs[id] = j
+		_ = s.ipadSaveLocked()
+		return s.ipadViewLocked(j), http.StatusOK, nil
+	}
+	if len(s.ipadQueue) >= 100 {
+		return ipadJob{}, http.StatusTooManyRequests, errors.New("Очередь iPad заполнена (100 ожидающих)")
+	}
+	j := &ipadJob{ID: id, Status: "queued", FileName: filepath.Base(out), Output: out,
+		Source: real, Profile: profile, SourceSize: info.Size()}
+	s.ipadJobs[id] = j
+	s.ipadQueue = append(s.ipadQueue, id)
+	if err = s.ipadSaveLocked(); err != nil {
+		delete(s.ipadJobs, id)
+		s.ipadQueue = s.ipadQueue[:len(s.ipadQueue)-1]
+		return ipadJob{}, http.StatusServiceUnavailable, errors.New("Не удалось сохранить очередь iPad")
+	}
+	s.ipadStartNextLocked()
+	return s.ipadViewLocked(j), http.StatusOK, nil
+}
 func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Path    string `json:"path"`
@@ -232,74 +279,96 @@ func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid iPad profile")
 		return
 	}
-	id, out, err := ipadOutputForProfile(real, info, input.Profile)
+	j, code, err := s.ipadEnqueue(real, info, input.Profile)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "iPad storage unavailable")
+		writeErr(w, code, err.Error())
 		return
 	}
-	s.ipadMu.Lock()
-	if old := s.ipadJobs[id]; old != nil {
-		if old.Status == "running" || old.Status == "queued" {
-			view := s.ipadViewLocked(old)
+	writeJSON(w, http.StatusOK, j)
+}
+
+// Add all completed downloaded media. No arbitrary paths or unverified files.
+func (s *Server) handleIPadPrepareAll(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Profile string `json:"profile"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if input.Profile == "" {
+		input.Profile = "balanced"
+	}
+	if input.Profile != "balanced" && input.Profile != "compact" && input.Profile != "fast" {
+		writeErr(w, http.StatusBadRequest, "invalid iPad profile")
+		return
+	}
+	library := scanLibrary(s.libraryDirs())
+	seen := make(map[string]bool)
+	added, skipped, full, total := 0, 0, false, 0
+	for _, series := range library.Series {
+		for _, ep := range series.Episodes {
+			if !ep.Exists {
+				continue
+			}
+			real, info, err := s.localMediaPath(ep.Path)
+			if err != nil {
+				skipped++
+				continue
+			}
+			if seen[real] {
+				continue
+			}
+			seen[real] = true
+			total++
+			s.ipadMu.Lock()
+			already := false
+			for _, j := range s.ipadJobs {
+				if j.Source != real {
+					continue
+				}
+				if j.Status == "running" || j.Status == "queued" {
+					already = true
+					break
+				}
+				if j.Status == "ready" {
+					if st, e := os.Stat(j.Output); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
+						already = true
+						break
+					}
+				}
+			}
 			s.ipadMu.Unlock()
-			writeJSON(w, http.StatusOK, view)
-			return
-		}
-		if old.Status == "ready" {
-			if st, e := os.Stat(old.Output); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
-				view := s.ipadViewLocked(old)
-				s.ipadMu.Unlock()
-				writeJSON(w, http.StatusOK, view)
-				return
+			if already {
+				skipped++
+				continue
+			}
+			j, code, err := s.ipadEnqueue(real, info, input.Profile)
+			if err != nil {
+				if code == http.StatusTooManyRequests {
+					full = true
+					break
+				}
+				skipped++
+				continue
+			}
+			if j.Status == "ready" {
+				skipped++
+			} else {
+				added++
 			}
 		}
-	}
-	// If another movie with an identical display title is already known, avoid
-	// overwriting its output. The suffix appears only for genuine name collisions.
-	for otherID, other := range s.ipadJobs {
-		if otherID != id && other.Output == out {
-			ext := filepath.Ext(out)
-			out = strings.TrimSuffix(out, ext) + " (" + id[:8] + ")" + ext
+		if full {
 			break
 		}
 	}
-	if st, e := os.Stat(out); e == nil && st.Mode().IsRegular() && st.Size() > 0 {
-		j := &ipadJob{ID: id, Status: "ready", Percent: 100, FileName: filepath.Base(out),
-			Size: st.Size(), Output: out, Source: real, Profile: input.Profile, SourceSize: info.Size()}
-		s.ipadJobs[id] = j
-		_ = s.ipadSaveLocked()
-		view := s.ipadViewLocked(j)
-		s.ipadMu.Unlock()
-		writeJSON(w, http.StatusOK, view)
-		return
-	}
-	if len(s.ipadQueue) >= 100 {
-		s.ipadMu.Unlock()
-		writeErr(w, http.StatusTooManyRequests, "Очередь iPad заполнена")
-		return
-	}
-	j := &ipadJob{ID: id, Status: "queued", FileName: filepath.Base(out), Output: out, Source: real, Profile: input.Profile, SourceSize: info.Size()}
-	s.ipadJobs[id] = j
-	s.ipadQueue = append(s.ipadQueue, id)
-	if err := s.ipadSaveLocked(); err != nil {
-		delete(s.ipadJobs, id)
-		s.ipadQueue = s.ipadQueue[:len(s.ipadQueue)-1]
-		s.ipadMu.Unlock()
-		writeErr(w, http.StatusServiceUnavailable, "Не удалось сохранить очередь iPad")
-		return
-	}
-	s.ipadStartNextLocked()
-	view := s.ipadViewLocked(j)
-	s.ipadMu.Unlock()
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, map[string]any{"added": added, "skipped": skipped, "total": total, "queueFull": full})
 }
 
 func (s *Server) runIPadExport(ctx context.Context, j *ipadJob) {
 	defer func() {
 		s.ipadMu.Lock()
-		if s.ipadActive == j.ID {
-			s.ipadActive = ""
-		}
+		delete(s.ipadActive, j.ID)
 		_ = s.ipadSaveLocked()
 		s.ipadStartNextLocked()
 		s.ipadMu.Unlock()

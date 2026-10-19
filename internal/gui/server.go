@@ -58,7 +58,7 @@ type Server struct {
 	// proxy only fetches URLs this server itself produced (not an open proxy).
 	ipadMu     sync.Mutex
 	ipadJobs   map[string]*ipadJob
-	ipadActive string
+	ipadActive map[string]struct{}
 	ipadQueue  []string
 
 	hlsKey []byte
@@ -91,16 +91,17 @@ func NewServer(version string, static fs.FS) *Server {
 	ensureSystemToolsOnPath() // so a system ffmpeg (Homebrew, …) is found from a .app launch
 	hub := newHub()
 	s := &Server{
-		version:  version,
-		static:   static,
-		hub:      hub,
-		mgr:      newJobManager(hub),
-		settings: newSettingsStore(),
-		updater:  newUpdateChecker(version),
-		tools:    &toolInstaller{},
-		ipadJobs: make(map[string]*ipadJob),
-		hlsKey:   randomKey(32),
-		hlsSem:   make(chan struct{}, 4),
+		version:    version,
+		static:     static,
+		hub:        hub,
+		mgr:        newJobManager(hub),
+		settings:   newSettingsStore(),
+		updater:    newUpdateChecker(version),
+		tools:      &toolInstaller{},
+		ipadJobs:   make(map[string]*ipadJob),
+		ipadActive: make(map[string]struct{}),
+		hlsKey:     randomKey(32),
+		hlsSem:     make(chan struct{}, 4),
 	}
 	// Teach the scheduler how to launch a job: resolve the single shared API
 	// client (nil when not signed in → run() fails the job with a clear message)
@@ -265,6 +266,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /api/local/hls", s.handleLocalHLS)
 	mux.HandleFunc("POST /api/ipad/prepare", s.handleIPadPrepare)
 	mux.HandleFunc("GET /api/ipad/queue", s.handleIPadQueue)
+	mux.HandleFunc("POST /api/ipad/prepare-all", s.handleIPadPrepareAll)
+	mux.HandleFunc("POST /api/ipad/clear", s.handleIPadClear)
 	mux.HandleFunc("GET /api/ipad/status/{id}", s.handleIPadStatus)
 	mux.HandleFunc("POST /api/ipad/cancel/{id}", s.handleIPadCancel)
 	mux.HandleFunc("GET /api/ipad/download/{id}", s.handleIPadDownload)

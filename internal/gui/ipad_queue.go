@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -216,11 +217,18 @@ func (s *Server) ipadSaveLocked() error {
 	return nil
 }
 
-func (s *Server) ipadStartNextLocked() {
-	if s.ipadActive != "" {
-		return
+func ipadConcurrency() int {
+	n, _ := strconv.Atoi(os.Getenv("KINOPUB_IPAD_CONCURRENT"))
+	if n == 1 {
+		return 1
 	}
-	for len(s.ipadQueue) > 0 {
+	return 2
+}
+func (s *Server) ipadStartNextLocked() {
+	if s.ipadActive == nil {
+		s.ipadActive = make(map[string]struct{})
+	}
+	for len(s.ipadActive) < ipadConcurrency() && len(s.ipadQueue) > 0 {
 		id := s.ipadQueue[0]
 		s.ipadQueue = s.ipadQueue[1:]
 		j := s.ipadJobs[id]
@@ -231,10 +239,9 @@ func (s *Server) ipadStartNextLocked() {
 		j.Status = "running"
 		j.Cancel = cancel
 		j.Percent = 0
-		s.ipadActive = id
+		s.ipadActive[id] = struct{}{}
 		_ = s.ipadSaveLocked()
 		go s.runIPadExport(ctx, j)
-		return
 	}
 	_ = s.ipadSaveLocked()
 }
@@ -329,11 +336,53 @@ func (s *Server) ipadViewLocked(j *ipadJob) ipadJob {
 	return v
 }
 
+// Only obsolete queue records are removed. Video files remain untouched.
+func (s *Server) ipadPruneHistoryLocked(removeFailures bool) int {
+	n := 0
+	for id, j := range s.ipadJobs {
+		if j.Status == "running" || j.Status == "queued" {
+			continue
+		}
+		stale := j.Status == "deleted" || j.Status == "canceled" ||
+			(j.Status == "failed" && j.Error == "Готовый файл отсутствует")
+		if j.Status == "ready" {
+			st, err := os.Stat(j.Output)
+			stale = err != nil || !st.Mode().IsRegular() || st.Size() == 0
+		}
+		if removeFailures && j.Status == "failed" {
+			stale = true
+		}
+		if stale {
+			delete(s.ipadJobs, id)
+			n++
+		}
+	}
+	if n > 0 {
+		_ = s.ipadSaveLocked()
+	}
+	return n
+}
+
+func (s *Server) handleIPadClear(w http.ResponseWriter, r *http.Request) {
+	s.ipadMu.Lock()
+	removed := s.ipadPruneHistoryLocked(true)
+	s.ipadMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
+}
+
 func (s *Server) handleIPadQueue(w http.ResponseWriter, r *http.Request) {
 	s.ipadMu.Lock()
+	s.ipadPruneHistoryLocked(false)
 	queue := make([]ipadJob, 0, len(s.ipadJobs))
-	if active := s.ipadJobs[s.ipadActive]; active != nil {
-		queue = append(queue, s.ipadViewLocked(active))
+	var running []*ipadJob
+	for id := range s.ipadActive {
+		if j := s.ipadJobs[id]; j != nil {
+			running = append(running, j)
+		}
+	}
+	sort.Slice(running, func(i, j int) bool { return running[i].FileName < running[j].FileName })
+	for _, j := range running {
+		queue = append(queue, s.ipadViewLocked(j))
 	}
 	for _, id := range s.ipadQueue {
 		if j := s.ipadJobs[id]; j != nil {
@@ -342,7 +391,7 @@ func (s *Server) handleIPadQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	var done []ipadJob
 	for _, j := range s.ipadJobs {
-		if j.ID != s.ipadActive && j.Status != "queued" {
+		if _, active := s.ipadActive[j.ID]; !active && j.Status != "queued" {
 			done = append(done, s.ipadViewLocked(j))
 		}
 	}

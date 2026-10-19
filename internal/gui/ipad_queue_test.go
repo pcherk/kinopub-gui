@@ -37,7 +37,7 @@ func TestIPadQueueFIFOAndRestore(t *testing.T) {
 	s.settings.mu.Unlock()
 	// Block the worker without starting any process to test order deterministically.
 	s.ipadMu.Lock()
-	s.ipadActive = "paused-by-test"
+	s.ipadActive = map[string]struct{}{"paused-one": {}, "paused-two": {}}
 	s.ipadMu.Unlock()
 	var ids []string
 	for _, n := range []string{"A", "B", "C"} {
@@ -79,7 +79,7 @@ func TestIPadQueueFIFOAndRestore(t *testing.T) {
 		t.Fatalf("unexpected queue after cancel: %#v", s.ipadQueue)
 	}
 	// A second Server instance restores persisted order but doesn't spawn ffmpeg.
-	restored := &Server{settings: s.settings, mgr: s.mgr, ipadJobs: make(map[string]*ipadJob), ipadActive: "paused-by-test"}
+	restored := &Server{settings: s.settings, mgr: s.mgr, ipadJobs: make(map[string]*ipadJob), ipadActive: map[string]struct{}{"paused-one": {}, "paused-two": {}}}
 	restored.restoreIPadQueue()
 	if len(restored.ipadQueue) != 2 || restored.ipadQueue[0] != ids[0] || restored.ipadQueue[1] != ids[2] {
 		t.Fatalf("restore lost queue order: %#v", restored.ipadQueue)
