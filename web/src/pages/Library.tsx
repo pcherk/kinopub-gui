@@ -43,6 +43,7 @@ import { EmptyState, Modal, PosterImage, Spinner } from "../components/ui";
 import { JobCard } from "../components/JobCard";
 import { TitleDetail } from "../components/TitleDetail";
 import { OfflinePlayer } from "../components/OfflinePlayer";
+import { ipadProfileName } from "../ipadProfiles";
 import { IPadPrepModal } from "../components/IPadPrepModal";
 
 // Shared empty array so `s.episodes ?? NO_EPISODES` keeps a stable identity and
@@ -222,7 +223,7 @@ function ipadLabel(job?: IPadExportStatus): string {
   if (!job) return "";
   if (job.status === "running") return `iPad · Готовится ${job.percent}%`;
   if (job.status === "queued") return `iPad · Очередь №${job.position ?? "?"}`;
-  if (job.status === "ready") return `iPad · Готово (${job.profile === "balanced" ? "1080p" : job.profile === "compact" ? "720p" : "быстрый"})`;
+  if (job.status === "ready") return "iPad · Готово (" + ipadProfileName(job.profile) + ")";
   return "";
 }
 

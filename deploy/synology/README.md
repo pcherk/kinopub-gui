@@ -219,3 +219,32 @@ using a representative short scene before adding many large films.
 Back up `state`, `secrets` and `.env`. Replace only `Dockerfile`,
 `compose.yaml`, `.dockerignore` from the ZIP in the current DSM project;
 rebuild and recreate. Don't delete `downloads`, `state` or `machine-id`.
+
+## v1.1.0-8 — three understandable profiles for iPad
+
+The export UI now shows exactly three choices with the same names everywhere
+(selection, saved-queue entries and completed-library labels):
+
+- **Оптимальный** (default): clear iPad picture with moderate size.
+  H.264 up to 1080p, preset veryfast, CRF 21, maxrate 5000k,
+  buffer 10000k, AAC stereo 160k. Compared with the former 4000k peak,
+  difficult dark/action scenes have more headroom; actual output
+  size depends on movie complexity.
+- **Быстрый / оригинал**: stream-copy suitable H.264/yuv420p MP4 video
+  up to 1080p/60fps, even when its source bitrate is high; copy compatible
+  AAC stereo where possible. If the video/audio is not compatible, FFmpeg
+  still converts it to make an iPad-friendly MP4. No quality loss from copying
+  the video; the exported file can be almost as big as the source.
+- **Экономия места**: H.264 up to 720p, CRF 25, maxrate 2000k,
+  buffer 4000k, AAC stereo 128k. Prioritizes storage; reduced detail is
+  expected on complex or high-motion scenes.
+
+The source media, existing saved exports and the on-disk queue are never
+deleted by this update. The iPad hardware does not accelerate transcoding
+on DS1621xs+ (Xeon D-1527 lacks Quick Sync); two concurrent FFmpeg
+conversions remain available.
+
+As usual: finish running conversions, back up state/secrets/.env,
+replace Dockerfile/compose.yaml/.dockerignore with the ZIP contents,
+then rebuild the project in Synology Container Manager. No need to
+change .env or the bind mounts.

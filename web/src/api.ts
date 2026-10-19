@@ -566,13 +566,15 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
   return data as T;
 }
 
+export type IPadProfile = "balanced" | "fast" | "compact";
+
 export type IPadExportStatus = {
   id: string;
   status: "running" | "queued" | "ready" | "failed" | "canceled" | "deleted";
   position?: number;
   sourcePath?: string;
   sourceSize?: number;
-  profile?: "balanced" | "compact" | "fast";
+  profile?: IPadProfile;
   percent: number;
   fileName: string;
   size?: number;
@@ -633,10 +635,10 @@ export const api = {
   deleteLibraryEpisode: (dir: string, key: string) =>
     req<{ deleted: boolean }>("POST", "/api/library/delete-episode", { dir, key }),
   openPath: (path: string, reveal = false) => req<{ ok: boolean }>("POST", "/api/open", { path, reveal }),
-  ipadPrepare: (path: string, profile: "balanced" | "compact" | "fast" = "balanced") =>
+  ipadPrepare: (path: string, profile: IPadProfile = "balanced") =>
     req<IPadExportStatus>("POST", "/api/ipad/prepare", { path, profile }),
   ipadQueue: () => req<IPadExportStatus[]>("GET", "/api/ipad/queue"),
-  ipadPrepareAll: (profile: "balanced" | "compact" | "fast" = "balanced") =>
+  ipadPrepareAll: (profile: IPadProfile = "balanced") =>
     req<{ added: number; skipped: number; total: number; queueFull: boolean }>("POST", "/api/ipad/prepare-all", { profile }),
   ipadClear: () => req<{ removed: number }>("POST", "/api/ipad/clear"),
   ipadStatus: (id: string) => req<IPadExportStatus>("GET", `/api/ipad/status/${encodeURIComponent(id)}`),

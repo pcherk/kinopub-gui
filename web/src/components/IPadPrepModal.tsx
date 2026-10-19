@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Download, Tablet, X } from "lucide-react";
-import { api, type IPadExportStatus } from "../api";
+import { api, type IPadExportStatus, type IPadProfile } from "../api";
+import { IPAD_PROFILES, ipadProfileName } from "../ipadProfiles";
+import clsx from "clsx";
 
 // All iPad exports use one FIFO queue. Closing this window does not cancel work.
 export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () => void }) {
   const [jobs, setJobs] = useState<IPadExportStatus[]>([]);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
-  const [profile, setProfile] = useState<"balanced" | "compact" | "fast">("balanced");
+  const [profile, setProfile] = useState<IPadProfile>("balanced");
   const [justAdded, setJustAdded] = useState(false);
   const [bulkBusy,setBulkBusy] = useState(false);
   const [bulkMessage,setBulkMessage] = useState("");
@@ -81,7 +83,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           </button>
         </div>
         <p className="mb-2 text-xs text-slate-400">
-          Оптимальное качество 1080p по умолчанию. NAS готовит до двух файлов одновременно; остальные ждут очереди.
+          Три режима для iPad. По умолчанию выбран «Оптимальный». NAS готовит до двух файлов одновременно; остальные ждут очереди.
         </p>
         <p className="mb-3 text-xs text-slate-400">
           Файлы находятся в downloads/iPad на Synology. Оригинальные фильмы не изменяются.
@@ -90,27 +92,34 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
         {path && (
           <div className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
             <p className="mb-2 break-words text-sm font-medium text-slate-100">{path.split("/").pop()}</p>
-            <div className="mb-3 flex flex-wrap gap-2">
-              <button type="button" onClick={() => setProfile("balanced")}
-                className={profile === "balanced" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
-                Оптимальный · до 1080p
-              </button>
-              <button type="button" onClick={() => setProfile("compact")}
-                className={profile === "compact" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
-                Экономия места · 720p
-              </button>
-              <button type="button" onClick={() => setProfile("fast")}
-                className={profile === "fast" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
-                Быстрый · до 1080p
-              </button>
+            <div role="group" aria-label="Профиль подготовки для iPad" className="mb-3 space-y-2">
+              {IPAD_PROFILES.map((option) => (
+                <button
+                  type="button"
+                  key={option.id}
+                  aria-pressed={profile === option.id}
+                  onClick={() => setProfile(option.id)}
+                  className={clsx(
+                    "w-full rounded-xl border p-3 text-left transition-colors",
+                    profile === option.id
+                      ? "border-gold-400/70 bg-gold-400/10"
+                      : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden="true" className={clsx(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+                      profile === option.id ? "border-gold-300" : "border-slate-500"
+                    )}>
+                      {profile === option.id && <span className="h-2 w-2 rounded-full bg-gold-300" />}
+                    </span>
+                    <span className="text-sm font-semibold text-slate-100">{option.title}</span>
+                    {option.id === "balanced" && <span className="ml-auto text-[11px] text-gold-300">Рекомендуем</span>}
+                  </span>
+                  <span className="ml-6 mt-1 block text-xs leading-relaxed text-slate-400">{option.description}</span>
+                </button>
+              ))}
             </div>
-            <p className="mb-3 text-xs text-slate-400">
-              {profile === "balanced"
-                ? "1080p, H.264 с сохранением деталей. Обычно занимает меньше места, чем исходный фильм, но конвертируется дольше."
-                : profile === "compact"
-                  ? "Максимальная экономия места. Возможна потеря деталей на динамичных сценах."
-                  : "Совместимое видео копируется без перекодирования. Файл может быть большим."}
-            </p>
             <button type="button" className="btn-primary px-4 py-2 text-sm" onClick={add} disabled={adding}>
               {adding ? "Добавляем…" : justAdded ? "Добавить ещё в выбранном режиме" : "Добавить в очередь"}
             </button>
@@ -136,7 +145,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           {ordered.map((job) => (
             <div key={job.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <p className="mb-1 break-words text-sm font-medium text-slate-100">{job.fileName}</p>
-              <p className="mb-2 text-xs text-slate-500">{job.profile === "balanced" ? "Оптимальный · 1080p" : job.profile === "compact" ? "Экономия места · 720p" : "Быстрый · до 1080p"}</p>
+              <p className="mb-2 text-xs text-slate-500">{ipadProfileName(job.profile)}</p>
               {job.status === "running" && (
                 <>
                   <p className="mb-1 text-xs text-slate-300">Подготовка: {job.percent}%</p>

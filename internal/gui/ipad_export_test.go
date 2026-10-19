@@ -37,17 +37,37 @@ func TestIPadArgsProfiles(t *testing.T) {
 		t.Fatalf("expected stream copy: %s", joined)
 	}
 	compact, _, err := ipadArgs("in.mkv", "out.mp4.part", p, "compact")
-	if err != nil || !strings.Contains(strings.Join(compact, " "), "-maxrate 1800k") ||
+	if err != nil || !strings.Contains(strings.Join(compact, " "), "-maxrate 2000k") ||
 		!strings.Contains(strings.Join(compact, " "), "-c:v libx264") ||
 		!strings.Contains(strings.Join(compact, " "), "min(720,ih)") {
 		t.Fatal("compact must reencode at 720p with bitrate cap")
 	}
 	balanced, _, err := ipadArgs("in.mkv", "out.mp4.part", p, "balanced")
 	if err != nil || !strings.Contains(strings.Join(balanced, " "), "-crf 21") ||
-		!strings.Contains(strings.Join(balanced, " "), "-maxrate 4000k") ||
+		!strings.Contains(strings.Join(balanced, " "), "-maxrate 5000k") ||
 		!strings.Contains(strings.Join(balanced, " "), "min(1080,ih)") ||
 		!strings.Contains(strings.Join(balanced, " "), "-preset veryfast") {
 		t.Fatalf("balanced profile must preserve 1080p and use gentler compression: %v", balanced)
+	}
+	p.Streams[0].BitRate = "9500000"
+	highRateFast, _, err := ipadArgs("in.mkv", "out.mp4.part", p, "fast")
+	if err != nil || !strings.Contains(strings.Join(highRateFast, " "), "-c:v copy") {
+		t.Fatal("fast/original should stream-copy compatible high-bitrate H264")
+	}
+	p.Streams = append(p.Streams, struct {
+		CodecType    string `json:"codec_type"`
+		CodecName    string `json:"codec_name"`
+		PixFmt       string `json:"pix_fmt"`
+		Width        int    `json:"width"`
+		Height       int    `json:"height"`
+		BitRate      string `json:"bit_rate"`
+		Channels     int    `json:"channels"`
+		SampleRate   string `json:"sample_rate"`
+		AvgFrameRate string `json:"avg_frame_rate"`
+	}{CodecType: "audio", CodecName: "ac3", Channels: 6, SampleRate: "48000"})
+	qualityWithAudio, _, err := ipadArgs("in.mkv", "out.mp4.part", p, "balanced")
+	if err != nil || !strings.Contains(strings.Join(qualityWithAudio, " "), "-c:a aac -ac 2 -ar 48000 -b:a 160k") {
+		t.Fatal("balanced profile must encode AAC stereo 160 kbps")
 	}
 	p.Streams[0].CodecName = "hevc"
 	args, _, err = ipadArgs("in.mkv", "out.mp4.part", p, "fast")

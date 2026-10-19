@@ -17,6 +17,9 @@ vi.mock("../api", () => ({
 
 beforeEach(() => {
   vi.mocked(api.ipadQueue).mockResolvedValue([]);
+  vi.mocked(api.ipadPrepare).mockResolvedValue({
+    id: "film1", status: "queued", fileName: "Film - iPad.mp4", percent: 0, profile: "balanced",
+  });
   vi.mocked(api.ipadPrepareAll).mockResolvedValue({ added: 3, skipped: 2, total: 5, queueFull: false });
   vi.mocked(api.ipadClear).mockResolvedValue({ removed: 2 });
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -44,5 +47,33 @@ describe("iPad queue interface", () => {
     const el=await screen.findByText("СКАЧАТЬ MP4 на это устройство");
     expect(el.closest("a")?.getAttribute("href")).toBe("/api/ipad/download/abc");
     expect(screen.getByText(/«На моём iPad»/)).toBeTruthy();
+  });
+  it("offers exactly three clear profiles and selects optimal by default", async () => {
+    render(<IPadPrepModal path="/data/Film.mkv" onClose={() => {}} />);
+    const options = ["Оптимальный", "Быстрый / оригинал", "Экономия места"];
+    const profileGroup = screen.getByRole("group", { name: "Профиль подготовки для iPad" });
+    const buttons = profileGroup.querySelectorAll("button");
+    expect(buttons).toHaveLength(3);
+    expect(Array.from(buttons).map((b) => b.textContent?.includes("Оптимальный") ? "Оптимальный" :
+      b.textContent?.includes("Быстрый / оригинал") ? "Быстрый / оригинал" : "Экономия места")).toEqual(options);
+    expect(buttons[0].getAttribute("aria-pressed")).toBe("true");
+    expect(buttons[1].getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("sends the selected fast/original and economy profiles to the backend", async () => {
+    render(<IPadPrepModal path="/data/Film.mkv" onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Быстрый / оригинал"));
+    fireEvent.click(screen.getByText("Добавить в очередь"));
+    await waitFor(() => expect(api.ipadPrepare).toHaveBeenCalledWith("/data/Film.mkv", "fast"));
+    fireEvent.click(screen.getByText("Экономия места"));
+    fireEvent.click(screen.getByText("Добавить ещё в выбранном режиме"));
+    await waitFor(() => expect(api.ipadPrepare).toHaveBeenCalledWith("/data/Film.mkv", "compact"));
+  });
+
+  it("mass enqueues with the chosen profile", async () => {
+    render(<IPadPrepModal path="/data/Film.mkv" onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Экономия места"));
+    fireEvent.click(screen.getByText("Подготовить ВСЕ фильмы для iPad"));
+    await waitFor(() => expect(api.ipadPrepareAll).toHaveBeenCalledWith("compact"));
   });
 });

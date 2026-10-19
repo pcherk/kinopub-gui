@@ -97,7 +97,6 @@ func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, 
 	duration, _ := strconv.ParseFloat(p.Format.Duration, 64)
 	args := []string{"-hide_banner", "-nostdin", "-v", "error", "-y", "-i", src,
 		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1"}
-	bitrate, _ := strconv.ParseInt(video.BitRate, 10, 64)
 	fps := 0.0
 	if parts := strings.Split(video.AvgFrameRate, "/"); len(parts) == 2 {
 		numerator, _ := strconv.ParseFloat(parts[0], 64)
@@ -111,7 +110,7 @@ func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, 
 	// Copying 6 Mbps H.264 was creating multi-gigabyte iPad exports.
 	fast := profile == "fast" && video.CodecName == "h264" && video.PixFmt == "yuv420p" &&
 		video.Width > 0 && video.Height > 0 && video.Width <= 1920 && video.Height <= 1080 &&
-		(fps == 0 || fps <= 60) && (bitrate == 0 || bitrate <= 6_000_000)
+		(fps == 0 || fps <= 60)
 	if fast {
 		args = append(args, "-c:v", "copy", "-tag:v", "avc1")
 	} else if profile == "fast" {
@@ -122,12 +121,12 @@ func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, 
 		// iPad quality default: retain up to 1080p, a gentler CRF and enough
 		// peak bitrate for moving/dark scenes. Never upscale small sources.
 		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-			"-maxrate", "4000k", "-bufsize", "8000k",
+			"-maxrate", "5000k", "-bufsize", "10000k",
 			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
 			"-threads", "2")
 	} else {
-		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-			"-maxrate", "1800k", "-bufsize", "3600k",
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "25",
+			"-maxrate", "2000k", "-bufsize", "4000k",
 			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
 			"-threads", "2")
 	}
@@ -140,7 +139,11 @@ func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, 
 			(audioBitrate == 0 || audioBitrate <= 192_000) {
 			args = append(args, "-c:a", "copy")
 		} else {
-			args = append(args, "-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k")
+			audioBitrate := "128k"
+			if profile == "balanced" {
+				audioBitrate = "160k"
+			}
+			args = append(args, "-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", audioBitrate)
 		}
 	}
 	args = append(args, "-movflags", "+faststart", "-f", "mp4",
