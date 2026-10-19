@@ -2,7 +2,7 @@
 # No in-build Go source patches, sed substitutions or local auth overlays.
 FROM golang:1.26.3-bookworm AS builder
 
-ARG SOURCE_REF=synology-v1.1.0-5
+ARG SOURCE_REF=synology-v1.1.0-6
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git ca-certificates && \
     rm -rf /var/lib/apt/lists/*

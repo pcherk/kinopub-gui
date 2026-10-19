@@ -160,3 +160,30 @@ No unsupported per-service `logging` stanza was introduced.
 - FIFO and saved state remain compatible with v1.1.0-4. Old movies, exports,
   queued work, mount paths and credentials are not moved or deleted.
 - **Important:** finish ongoing conversions before rebuilding the NAS image.
+
+
+## v1.1.0-6 — quality-first iPad default and clean names
+
+- **Optimal 1080p (default):** CPU H.264 up to 1920×1080, `-preset faster`,
+  `-crf 22`, VBV `maxrate=4000k:bufsize=8000k`, yuv420p, AAC stereo
+  128 kbps, `+faststart`. It never upscales lower-resolution sources.
+  Designed as a quality-focused balance for an iPad display, not lossless:
+  very dark/high-motion sources may still exhibit compression artifacts.
+  Encode time is longer than remux/fast mode on DS1621xs+.
+- The previous **compact 720p** and **fast 1080p** profiles remain available
+  unchanged. They preserve their prior identities and files, so old completed
+  exports and persistent FIFO queue items can be restored after update.
+- Balanced profile has a **distinct, versioned job ID** and output name.
+  Examples using the actual recorded kino.watch library metadata:
+  `Курьер (Runner) - iPad 1080p.mp4`, `Титаник (Titanic) - iPad 1080p.mp4`;
+  an actual series episode becomes `Сериал (Show) - S01E02 - iPad 1080p.mp4`.
+  The movie's misleading `S01E01` is no longer included.
+- Filenames are generated server-side from `.kinopub-state.json` when the
+  chosen media belongs to a verified library record. Standalone files without
+  metadata retain a conservative directory-name fallback.
+- Files from old versions are NOT renamed, rewritten, deleted, or moved.
+
+Before updating: allow running exports to complete, back up state/secrets/.env
+and replace only Dockerfile, compose.yaml and .dockerignore. Rebuild the
+existing Synology Container Manager project. Confirm new result on an iPad
+using a representative short scene before adding many large films.

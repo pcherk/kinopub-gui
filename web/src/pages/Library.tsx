@@ -211,7 +211,8 @@ function prepareForIPad(path: string) {
 export function ipadStatusForPath(path: string, jobs: IPadExportStatus[]): IPadExportStatus | undefined {
   const matching = jobs.filter((j) => j.sourcePath === path && !["canceled", "deleted", "failed"].includes(j.status));
   const weight = (j: IPadExportStatus) =>
-    j.status === "running" ? 4 : j.status === "queued" ? 3 :
+    j.status === "running" ? 5 : j.status === "queued" ? 4 :
+    j.status === "ready" && j.profile === "balanced" ? 3 :
     j.status === "ready" && j.profile === "compact" ? 2 : j.status === "ready" ? 1 : 0;
   return matching.sort((a, b) => weight(b) - weight(a))[0];
 }
@@ -220,7 +221,7 @@ function ipadLabel(job?: IPadExportStatus): string {
   if (!job) return "";
   if (job.status === "running") return `iPad · Готовится ${job.percent}%`;
   if (job.status === "queued") return `iPad · Очередь №${job.position ?? "?"}`;
-  if (job.status === "ready") return `iPad · Готово (${job.profile === "compact" ? "компактный" : "быстрый"})`;
+  if (job.status === "ready") return `iPad · Готово (${job.profile === "balanced" ? "1080p" : job.profile === "compact" ? "720p" : "быстрый"})`;
   return "";
 }
 

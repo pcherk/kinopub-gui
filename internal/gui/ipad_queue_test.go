@@ -3,6 +3,7 @@ package gui
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/ZioSHik/kinopub-gui/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -109,5 +110,74 @@ func TestProfiledOutputDoesNotOverwriteOldFastExport(t *testing.T) {
 	}
 	if !strings.Contains(compactPath, "Compact") {
 		t.Fatal("compact output must be distinct")
+	}
+}
+
+func TestIPadPrettyNameUsesVerifiedLibraryMetadata(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		folder, name, original, typ, episode, expected string
+	}{
+		{"Курьер _ Runner", "Курьер", "Runner", "movie", "S01E01.mp4", "Курьер (Runner) - iPad 1080p.mp4"},
+		{"Титаник _ Titanic", "Титаник", "Titanic", "movie", "S01E01.mp4", "Титаник (Titanic) - iPad 1080p.mp4"},
+		{"Тони _ Tony", "Тони", "Tony", "movie", "S01E01.mp4", "Тони (Tony) - iPad 1080p.mp4"},
+		{"Сериал _ Show", "Сериал", "Show", "serial", "S01E02.mp4", "Сериал (Show) - S01E02 - iPad 1080p.mp4"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.folder, func(t *testing.T) {
+			dir := filepath.Join(root, tc.folder)
+			movie := filepath.Join(dir, "Season 01", tc.episode)
+			if err := os.MkdirAll(filepath.Dir(movie), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(movie, []byte("fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			epnum := 1
+			if strings.Contains(tc.episode, "E02") {
+				epnum = 2
+			}
+			writeStateFile(t, dir, domain.DownloadState{
+				Metadata: &domain.SeriesMetadata{Title: tc.name, OriginalTitle: tc.original, Type: tc.typ},
+				Completed: map[string]domain.CompletedRec{
+					"S1": {Season: 1, Episode: epnum, Path: filepath.Join("Season 01", tc.episode)},
+				},
+			})
+			folder, file := ipadPrettyName(movie)
+			if file != tc.expected {
+				t.Fatalf("file=%q, want %q", file, tc.expected)
+			}
+			if folder != tc.name+" ("+tc.original+")" {
+				t.Fatalf("folder=%q", folder)
+			}
+		})
+	}
+}
+
+func TestIPadPrettyNameFallbackBilingual(t *testing.T) {
+	folder, file := ipadPrettyName("/movies/Мэйдэй _ Mayday/Season 01/S01E01.mp4")
+	if folder != "Мэйдэй (Mayday)" || file != "Мэйдэй (Mayday) - S01E01 - iPad 1080p.mp4" {
+		t.Fatalf("%q %q", folder, file)
+	}
+}
+
+func TestBalancedProfileNameAndIdentityIsDistinct(t *testing.T) {
+	t.Setenv("KINOPUB_IPAD_OUTPUT_DIR", t.TempDir())
+	f := filepath.Join(t.TempDir(), "Movie.mp4")
+	if err := os.WriteFile(f, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stat, _ := os.Stat(f)
+	fastID, fastPath, _ := ipadOutputForProfile(f, stat, "fast")
+	compactID, compactPath, _ := ipadOutputForProfile(f, stat, "compact")
+	balancedID, balancedPath, err := ipadOutputForProfile(f, stat, "balanced")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if balancedID == fastID || balancedID == compactID || balancedPath == fastPath || balancedPath == compactPath {
+		t.Fatalf("balanced export could overwrite old files: %s %s", balancedPath, fastPath)
+	}
+	if !strings.HasSuffix(balancedPath, "Movie - iPad 1080p.mp4") {
+		t.Fatal(balancedPath)
 	}
 }

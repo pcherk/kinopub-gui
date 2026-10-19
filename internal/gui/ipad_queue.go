@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,6 +49,110 @@ func ipadFriendlyName(real string) (string, string) {
 		file += " - " + episode
 	}
 	return title, file + " - iPad.mp4"
+}
+
+// Export names are derived from the library's verified metadata rather than
+// guessing that every S01E01 file is a television episode. KinoPub also uses
+// S01E01.mp4 for individual movies.
+func ipadPrettyName(real string) (folder, filename string) {
+	title, fallback := ipadFriendlyName(real)
+	movie := false
+	metadata := false
+	code := ipadEpisodePattern.FindString(filepath.Base(real))
+	if dir := filepath.Dir(real); dir != "" {
+		for level := 0; level < 4; level++ {
+			stateFile := filepath.Join(dir, stateFileName)
+			if item, ok := readLibraryState(stateFile); ok {
+				matched := false
+				var season, episode int
+				for _, e := range item.Episodes {
+					if filepath.Clean(e.Path) == filepath.Clean(real) {
+						matched = true
+						season, episode = e.Season, e.Episode
+						break
+					}
+				}
+				if matched {
+					metadata = true
+					movie = item.IsMovie
+					title = ipadMetadataTitle(item.Title, item.OriginalTitle)
+					if !movie {
+						if season > 0 && episode > 0 {
+							code = fmt.Sprintf("S%02dE%02d", season, episode)
+						}
+					}
+					break
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	if !metadata { // Standalone imports retain the legacy episode heuristic.
+		title = ipadNormalizeTitle(title)
+	}
+	if title == "" {
+		title = "Фильм"
+	}
+	if !movie && code != "" {
+		title = strings.TrimSpace(title)
+		fallback = title + " - " + strings.ToUpper(code)
+	}
+	if movie || code == "" {
+		fallback = title
+	}
+	return title, fallback + " - iPad 1080p.mp4"
+}
+
+func ipadNormalizeTitle(s string) string {
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	// Legacy KinoPub download directories use "Родное _ Original" names.
+	// Avoid blindly replacing underscores embedded inside actual titles.
+	for _, sep := range []string{" _ ", " / "} {
+		if parts := strings.SplitN(s, sep, 2); len(parts) == 2 &&
+			strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
+			s = strings.TrimSpace(parts[0]) + " (" + strings.TrimSpace(parts[1]) + ")"
+			break
+		}
+	}
+	return ipadSafeName(s)
+}
+
+func ipadMetadataTitle(title, original string) string {
+	title = strings.Join(strings.Fields(title), " ")
+	original = strings.Join(strings.Fields(original), " ")
+	for _, sep := range []string{" _ ", " / "} {
+		if original != "" && len(title) >= len(sep+original) &&
+			strings.HasSuffix(strings.ToLower(title), strings.ToLower(sep+original)) {
+			title = strings.TrimSpace(title[:len(title)-len(sep+original)])
+			break
+		}
+	}
+	if title == "" {
+		title = original
+	}
+	if original != "" && !strings.EqualFold(title, original) && !strings.Contains(strings.ToLower(title), strings.ToLower("("+original+")")) {
+		return ipadNormalizeTitle(title + " (" + original + ")")
+	}
+	return ipadNormalizeTitle(title)
+}
+
+func ipadSafeName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 || strings.ContainsRune("<>:|?*", r) || r == 34 || r == 47 || r == 92 {
+			return '-'
+		}
+		return r
+	}, s)
+	s = strings.TrimSpace(strings.Trim(s, ". "))
+	chars := []rune(s)
+	if len(chars) > 110 {
+		s = string(chars[:110])
+	}
+	return s
 }
 
 type ipadSavedJob struct {
@@ -162,7 +267,7 @@ func (s *Server) restoreIPadQueue() {
 		if profile == "" {
 			profile = "fast"
 		} // migration of pre-profile exports
-		if profile != "fast" && profile != "compact" {
+		if profile != "fast" && profile != "compact" && profile != "balanced" {
 			continue
 		}
 		id, _, e := ipadOutputForProfile(real, info, profile)

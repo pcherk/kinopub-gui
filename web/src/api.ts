@@ -572,7 +572,7 @@ export type IPadExportStatus = {
   position?: number;
   sourcePath?: string;
   sourceSize?: number;
-  profile?: "compact" | "fast";
+  profile?: "balanced" | "compact" | "fast";
   percent: number;
   fileName: string;
   size?: number;
@@ -633,7 +633,7 @@ export const api = {
   deleteLibraryEpisode: (dir: string, key: string) =>
     req<{ deleted: boolean }>("POST", "/api/library/delete-episode", { dir, key }),
   openPath: (path: string, reveal = false) => req<{ ok: boolean }>("POST", "/api/open", { path, reveal }),
-  ipadPrepare: (path: string, profile: "compact" | "fast" = "compact") =>
+  ipadPrepare: (path: string, profile: "balanced" | "compact" | "fast" = "balanced") =>
     req<IPadExportStatus>("POST", "/api/ipad/prepare", { path, profile }),
   ipadQueue: () => req<IPadExportStatus[]>("GET", "/api/ipad/queue"),
   ipadStatus: (id: string) => req<IPadExportStatus>("GET", `/api/ipad/status/${encodeURIComponent(id)}`),

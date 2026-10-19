@@ -42,6 +42,13 @@ func TestIPadArgsProfiles(t *testing.T) {
 		!strings.Contains(strings.Join(compact, " "), "min(720,ih)") {
 		t.Fatal("compact must reencode at 720p with bitrate cap")
 	}
+	balanced, _, err := ipadArgs("in.mkv", "out.mp4.part", p, "balanced")
+	if err != nil || !strings.Contains(strings.Join(balanced, " "), "-crf 22") ||
+		!strings.Contains(strings.Join(balanced, " "), "-maxrate 4000k") ||
+		!strings.Contains(strings.Join(balanced, " "), "min(1080,ih)") ||
+		!strings.Contains(strings.Join(balanced, " "), "-preset faster") {
+		t.Fatalf("balanced profile must preserve 1080p and use gentler compression: %v", balanced)
+	}
 	p.Streams[0].CodecName = "hevc"
 	args, _, err = ipadArgs("in.mkv", "out.mp4.part", p, "fast")
 	if err != nil || !strings.Contains(strings.Join(args, " "), "-c:v libx264") {

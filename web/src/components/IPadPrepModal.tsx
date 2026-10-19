@@ -7,7 +7,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
   const [jobs, setJobs] = useState<IPadExportStatus[]>([]);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
-  const [profile, setProfile] = useState<"compact" | "fast">("compact");
+  const [profile, setProfile] = useState<"balanced" | "compact" | "fast">("balanced");
   const [justAdded, setJustAdded] = useState(false);
   const refresh = () => api.ipadQueue().then(setJobs).catch(() => {});
   const add = async () => {
@@ -58,7 +58,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           </button>
         </div>
         <p className="mb-2 text-xs text-slate-400">
-          Компактный MP4 720p по умолчанию. NAS готовит файлы по одному; остальные ждут своей очереди.
+          Оптимальное качество 1080p по умолчанию. NAS готовит файлы по одному; остальные ждут очереди.
         </p>
         <p className="mb-3 text-xs text-slate-400">
           Файлы находятся в downloads/iPad на Synology. Оригинальные фильмы не изменяются.
@@ -68,9 +68,13 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           <div className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
             <p className="mb-2 break-words text-sm font-medium text-slate-100">{path.split("/").pop()}</p>
             <div className="mb-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setProfile("balanced")}
+                className={profile === "balanced" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
+                Оптимальный · до 1080p
+              </button>
               <button type="button" onClick={() => setProfile("compact")}
                 className={profile === "compact" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
-                Компактный · 720p
+                Экономия места · 720p
               </button>
               <button type="button" onClick={() => setProfile("fast")}
                 className={profile === "fast" ? "btn-primary px-3 py-2 text-xs" : "btn-ghost px-3 py-2 text-xs"}>
@@ -78,9 +82,11 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
               </button>
             </div>
             <p className="mb-3 text-xs text-slate-400">
-              {profile === "compact"
-                ? "Меньше места на iPad. H.264 с ограничением битрейта, обработка дольше."
-                : "Совместимый H.264 копируется без повторного кодирования. Файл может быть большим."}
+              {profile === "balanced"
+                ? "1080p, H.264 с сохранением деталей. Обычно занимает меньше места, чем исходный фильм, но конвертируется дольше."
+                : profile === "compact"
+                  ? "Максимальная экономия места. Возможна потеря деталей на динамичных сценах."
+                  : "Совместимое видео копируется без перекодирования. Файл может быть большим."}
             </p>
             <button type="button" className="btn-primary px-4 py-2 text-sm" onClick={add} disabled={adding}>
               {adding ? "Добавляем…" : justAdded ? "Добавить ещё в выбранном режиме" : "Добавить в очередь"}
@@ -98,7 +104,7 @@ export function IPadPrepModal({ path, onClose }: { path?: string; onClose: () =>
           {ordered.map((job) => (
             <div key={job.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <p className="mb-1 break-words text-sm font-medium text-slate-100">{job.fileName}</p>
-              <p className="mb-2 text-xs text-slate-500">{job.profile === "compact" ? "Компактный · 720p" : "Быстрый · до 1080p"}</p>
+              <p className="mb-2 text-xs text-slate-500">{job.profile === "balanced" ? "Оптимальный · 1080p" : job.profile === "compact" ? "Экономия места · 720p" : "Быстрый · до 1080p"}</p>
               {job.status === "running" && (
                 <>
                   <p className="mb-1 text-xs text-slate-300">Подготовка: {job.percent}%</p>

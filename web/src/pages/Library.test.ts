@@ -160,7 +160,7 @@ describe("supersededByLibrary", () => {
 });
 
 describe("iPad status on library cards", () => {
-  function exportJob(id: string, status: IPadExportStatus["status"], profile: "fast" | "compact"): IPadExportStatus {
+  function exportJob(id: string, status: IPadExportStatus["status"], profile: "fast" | "compact" | "balanced"): IPadExportStatus {
     return { id, status, profile, percent: 45, fileName: "Film.mp4",
       sourcePath: "/downloads/Film.mkv", position: 2 };
   }
@@ -175,6 +175,8 @@ describe("iPad status on library cards", () => {
     ];
     expect(ipadStatusForPath("/downloads/Film.mkv", jobs)?.status).toBe("queued");
     expect(ipadStatusForPath("/downloads/Film.mkv", jobs.slice(0,2))?.profile).toBe("compact");
+    const highQuality = exportJob("4","ready","balanced");
+    expect(ipadStatusForPath("/downloads/Film.mkv", [...jobs.slice(0,2),highQuality])?.profile).toBe("balanced");
   });
   it("does not show stale canceled or unrelated jobs", () => {
     expect(ipadStatusForPath("/downloads/Film.mkv", [exportJob("1","deleted","compact")])).toBeUndefined();

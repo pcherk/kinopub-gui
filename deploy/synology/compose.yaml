@@ -3,7 +3,7 @@
 services:
   kinopub:
     container_name: kinopub
-    image: kinopub:synology-v1.1.0-5
+    image: kinopub:synology-v1.1.0-6
     build:
       context: .
       dockerfile: Dockerfile

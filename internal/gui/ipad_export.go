@@ -118,6 +118,13 @@ func ipadArgs(src, dst string, p ipadProbe, profile string) ([]string, float64, 
 		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
 			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
 			"-threads", "2")
+	} else if profile == "balanced" {
+		// iPad quality default: retain up to 1080p, a gentler CRF and enough
+		// peak bitrate for moving/dark scenes. Never upscale small sources.
+		args = append(args, "-c:v", "libx264", "-preset", "faster", "-crf", "22",
+			"-maxrate", "4000k", "-bufsize", "8000k",
+			"-pix_fmt", "yuv420p", "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+			"-threads", "2")
 	} else {
 		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
 			"-maxrate", "1800k", "-bufsize", "3600k",
@@ -172,8 +179,21 @@ func ipadOutput(real string, info os.FileInfo) (string, string, error) {
 // high-bitrate MP4s remain available independently as the fast profile.
 func ipadOutputForProfile(real string, info os.FileInfo, profile string) (string, string, error) {
 	id, old, err := ipadOutput(real, info)
-	if err != nil || profile != "compact" {
+	if err != nil {
 		return id, old, err
+	}
+	if profile == "balanced" {
+		h := sha256.Sum256([]byte("ipad-balanced-hq1080-v1|" + id))
+		id = hex.EncodeToString(h[:16])
+		root, e := ipadExportsRoot()
+		if e != nil {
+			return "", "", e
+		}
+		folder, name := ipadPrettyName(real)
+		return id, filepath.Join(root, folder, name), nil
+	}
+	if profile != "compact" {
+		return id, old, nil
 	}
 	h := sha256.Sum256([]byte("ipad-compact-720-v1|" + id))
 	id = hex.EncodeToString(h[:16])
@@ -206,9 +226,9 @@ func (s *Server) handleIPadPrepare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.Profile == "" {
-		input.Profile = "compact"
+		input.Profile = "balanced"
 	}
-	if input.Profile != "compact" && input.Profile != "fast" {
+	if input.Profile != "compact" && input.Profile != "fast" && input.Profile != "balanced" {
 		writeErr(w, http.StatusBadRequest, "invalid iPad profile")
 		return
 	}
